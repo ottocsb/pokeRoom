@@ -4,9 +4,6 @@ import type { ClientMsg } from './protocol';
 
 type Signal = { sdp?: RTCSessionDescriptionInit; ice?: RTCIceCandidateInit };
 
-/** debug output in the browser console, filter by "[voice]" */
-const log = (...a: unknown[]) => console.log('[voice]', ...a);
-
 // public STUN servers reachable from mainland China (third-party, no guarantee)
 const STUN: RTCIceServer = { urls: ['stun:stun.miwifi.com:3478', 'stun:stun.chat.bilibili.com:3478', 'stun:stun.qq.com:3478'] };
 
@@ -32,12 +29,10 @@ export class Voice {
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('当前浏览器不支持语音（需要 HTTPS 或 localhost）');
     this.mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
     this.muted = false;
-    log('mic ok', this.mic.getAudioTracks().map((t) => `${t.label} enabled=${t.enabled} state=${t.readyState}`));
   }
 
   leave(tell = true) {
     if (!this.mic) return;
-    log('leave');
     for (const u of [...this.peers.keys()]) this.drop(u);
     this.mic.getTracks().forEach((t) => t.stop());
     this.mic = null;
@@ -45,14 +40,12 @@ export class Voice {
   }
 
   setMuted(m: boolean) {
-    log('muted', m);
     this.muted = m;
     this.mic?.getAudioTracks().forEach((t) => (t.enabled = !m));
   }
 
   /** server reply to our join: call everyone already there */
   async callAll(users: string[]) {
-    log('joined, calling', users);
     for (const u of users) {
       const pc = this.connect(u);
       await pc.setLocalDescription(await pc.createOffer());
@@ -61,8 +54,7 @@ export class Voice {
   }
 
   async onSignal(from: string, data: Signal) {
-    log('recv from', from, data.sdp ? data.sdp.type : `ice ${data.ice?.candidate}`);
-    if (!this.mic) return log('not in voice, ignored');
+    if (!this.mic) return;
     if (data.sdp?.type === 'offer') {
       // a (re)joining peer calls us: always start a fresh connection
       this.drop(from);
@@ -73,18 +65,14 @@ export class Voice {
       return;
     }
     const pc = this.peers.get(from)?.pc;
-    if (!pc) return log('no connection with', from, ', ignored');
+    if (!pc) return;
     if (data.sdp) await pc.setRemoteDescription(data.sdp);
     else if (data.ice) await pc.addIceCandidate(data.ice).catch(() => {});
   }
 
   /** the server's member list changed: hang up on whoever left the channel */
   sync(users: string[]) {
-    for (const u of [...this.peers.keys()])
-      if (!users.includes(u)) {
-        log(u, 'left the channel');
-        this.drop(u);
-      }
+    for (const u of [...this.peers.keys()]) if (!users.includes(u)) this.drop(u);
   }
 
   private connect(user: string) {
@@ -92,26 +80,14 @@ export class Voice {
     const audio = new Audio();
     audio.autoplay = true;
     this.mic!.getTracks().forEach((t) => pc.addTrack(t, this.mic!));
-    log('connect', user, this.turn ? `turn ${this.turn.urls}` : 'no turn');
-    pc.onicecandidate = (e) => {
-      // typ host = LAN, srflx = public address via STUN, relay = TURN; no srflx means STUN is unreachable
-      log(user, e.candidate ? `local candidate ${e.candidate.type} ${e.candidate.protocol} ${e.candidate.address}:${e.candidate.port}` : 'candidates done');
-      if (e.candidate) this.signal(user, { ice: e.candidate.toJSON() });
-    };
-    pc.onicecandidateerror = (e) => log(user, 'ice error', (e as RTCPeerConnectionIceErrorEvent).url, (e as RTCPeerConnectionIceErrorEvent).errorText);
-    pc.oniceconnectionstatechange = () => log(user, 'ice', pc.iceConnectionState);
+    pc.onicecandidate = (e) => e.candidate && this.signal(user, { ice: e.candidate.toJSON() });
     pc.onconnectionstatechange = () => {
-      log(user, 'connection', pc.connectionState);
       if (pc.connectionState === 'connected') this.onState(user, true);
       else if (pc.connectionState === 'failed') this.onState(user, false);
     };
     pc.ontrack = (e) => {
-      log(user, 'got audio track', e.track.readyState);
       audio.srcObject = e.streams[0];
-      audio
-        .play()
-        .then(() => log(user, 'playing'))
-        .catch((err) => log(user, 'play blocked', err));
+      audio.play().catch(() => {});
     };
     this.peers.set(user, { pc, audio });
     return pc;
