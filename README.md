@@ -38,11 +38,10 @@ npm run server     # 部署用：打包服务端，用一个端口同时提供�
 
 ### Docker
 
-先在项目根目录建 `.env`，配置语音中继（TURN，玩家之间直连不通时转发语音）：
+先复制示例配置，再把 `.env` 里的 `TURN_IP`（服务器公网 IP）和 `TURN_SECRET`（随机字符串）改掉。这是语音中继（TURN），玩家之间直连不通时用它转发语音：
 
 ```bash
-TURN_IP=服务器公网 IP
-TURN_SECRET=一串足够长的随机字符串   # 例如 openssl rand -hex 24 生成
+cp .env.example .env
 ```
 
 服务器防火墙 / 云安全组要放行 `3478`（UDP + TCP）和 `49160-49200`（UDP）。语音需要 HTTPS 访问页面（浏览器只在 HTTPS 或 localhost 下允许用麦克风）。
