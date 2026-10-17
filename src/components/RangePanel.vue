@@ -48,7 +48,7 @@ const view = computed(() => {
       </template>
     </div>
     <p class="range-note">
-      <i class="raise"></i>加注 {{ view.raisePct }}%<template v-if="view.callPct"> <i class="call"></i>跟注 {{ view.callPct }}%</template>
+      <i class="raise"></i>{{ view.cur.name === 'BB' ? '3bet' : '加注' }} {{ view.raisePct }}%<template v-if="view.callPct"> <i class="call"></i>跟注 {{ view.callPct }}%</template>
     </p>
     <p class="range-note dim">{{ view.cur.chart.note }}；100BB 现金桌近似参考</p>
   </aside>
