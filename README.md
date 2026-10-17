@@ -36,6 +36,17 @@ npm run server     # 部署用：打包服务端，用一个端口同时提供�
 
 如果联机服务单独部署在别的地址，构建前端时用 `VITE_POKER_SERVER` 指定 WebSocket 地址，例如 `VITE_POKER_SERVER=wss://example.com/poker-ws`。
 
+### Docker
+
+```bash
+docker compose up -d --build     # 构建镜像并后台启动，访问 http://localhost:8787
+PORT=9000 docker compose up -d   # 改用宿主机 9000 端口
+docker compose logs -f           # 查看日志
+docker compose down              # 停止（数据保留在 poker-data 卷里）
+```
+
+数据库存放在名为 `poker-data` 的 Docker 卷中（容器内路径 `/app/server-data`），重建镜像不会丢失。也可以不用 compose：`docker build -t pokeroom .`，再 `docker run -d -p 8787:8787 -v poker-data:/app/server-data pokeroom`。
+
 ## 目录结构
 
 ```

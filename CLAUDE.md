@@ -18,6 +18,8 @@ npm run build     # vue-tsc --noEmit 类型检查 + vite build → dist/
 npm run server    # esbuild 打包 server/standalone.ts → dist-server/ 并直接运行（会一直占着终端），单端口同时托管 dist/ 和 WebSocket（PORT 默认 8787）
 ```
 
+Docker：`docker compose up -d --build`。`Dockerfile` 是多阶段构建，构建阶段在 node 镜像里装 bun 来按 `bun.lock` 安装依赖，运行阶段用 node:24-alpine，只带生产依赖、`dist/` 和 `dist-server/`。数据在 `poker-data` 卷（`/app/server-data`）。`standalone.ts` 收到 SIGTERM/SIGINT 时会先保存还开着的牌桌的战绩再退出。
+
 `npm run server` 托管的是 `dist/`，改了前端要先 `npm run build`。改了服务端要重启它；在后台跑时，停掉外层 shell 不一定能结束 `node dist-server/index.mjs` 子进程，8787 会被占住（EADDRINUSE），需要手动结束这个进程。
 
 没有测试框架和 lint。验证方式：构建 + 浏览器实测。页面暴露了测试桥 `window.__OHMYGAME_PLAYTEST__`（`snapshot()` / `reset()` / `setSeed(n)`，定义在 `src/store.ts` 末尾），可以用它读取游戏状态。联机流程可以用 Node 脚本（`ws` 包，连 `ws://localhost:8787/poker-ws`）扮演其他玩家：发 `register` → `join` → `sit` 等 `ClientMsg`，打印收到的消息。服务端重启后所有房间都会消失。

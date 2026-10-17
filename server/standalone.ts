@@ -42,3 +42,11 @@ server.on('upgrade', (req, socket, head) => {
   else socket.destroy();
 });
 server.listen(port, () => console.log(`[poker] http://localhost:${port}  (ws ${WS_PATH})`));
+
+// docker stop / Ctrl+C: save standings of open tables before exiting
+for (const sig of ['SIGTERM', 'SIGINT'] as const)
+  process.on(sig, () => {
+    ps.close();
+    server.close();
+    process.exit(0);
+  });

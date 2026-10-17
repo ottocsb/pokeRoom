@@ -1,0 +1,14 @@
+services:
+  poker:
+    build: .
+    image: pokeroom
+    container_name: pokeroom
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8787}:8787"
+    volumes:
+      # accounts, hand history and table records (poker.db)
+      - poker-data:/app/server-data
+
+volumes:
+  poker-data:
