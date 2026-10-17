@@ -6,7 +6,7 @@ import { DEFAULT_ROOM, Game, GameEvent, Player, RoomConfig } from './game';
 import { applyTheme, loadTheme } from './themes';
 import { isMuted, setMuted, sfx } from './sound';
 import { Net, RemoteTable, savedToken, saveToken, TableLike } from './remote';
-import { sanitizeCreate, type CreateRoomCfg, type HandLog, type RoomInfo, type ServerMsg, type SettleRow, type Standing } from './protocol';
+import { sanitizeCreate, type CreateRoomCfg, type HandLog, type RoomInfo, type ServerMsg, type SessionRec, type SettleRow, type Standing } from './protocol';
 
 // ---------- persisted prefs ----------
 function loadJSON<T>(key: string, fallback: T): T {
@@ -36,7 +36,7 @@ export const remote = new RemoteTable(net);
 export const game = shallowRef<TableLike>(local);
 export const refresh = () => triggerRef(game);
 
-export type Screen = 'login' | 'rooms' | 'solo-setup' | 'create' | 'table';
+export type Screen = 'login' | 'rooms' | 'solo-setup' | 'create' | 'table' | 'records';
 
 /** invite code from a shared link (?room=CODE); consumed once we're logged in */
 const initialInvite = (() => {
@@ -66,6 +66,8 @@ export const ui = reactive({
   history: null as { hands: HandLog[]; standings: Standing[] } | null,
   /** settlement shown after the owner closed the table */
   settle: null as { name: string; rows: SettleRow[] } | null,
+  /** past tables the user played at (null = loading) */
+  records: null as SessionRec[] | null,
   netStatus: net.status,
   theme: loadTheme(),
   unit: (() => {
@@ -447,6 +449,13 @@ export function openHistory() {
   net.send({ t: 'history' });
 }
 
+export function openRecords() {
+  sfx.click();
+  ui.records = null;
+  ui.screen = 'records';
+  net.send({ t: 'sessions' });
+}
+
 export function answerBuyIn(user: string, ok: boolean) {
   sfx.click();
   net.send({ t: 'approve', user, ok });
@@ -562,6 +571,9 @@ net.onMessage = (m: ServerMsg) => {
       break;
     case 'history':
       ui.history = { hands: m.hands, standings: m.standings };
+      break;
+    case 'sessions':
+      ui.records = m.list;
       break;
     case 'closed':
       // the server already dissolved the room: leave without sending 'leave'

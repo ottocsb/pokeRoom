@@ -113,6 +113,18 @@ export interface SettleRow {
   chips: number;
   net: number;
 }
+/** One closed table as kept in a player's record */
+export interface SessionRec {
+  /** invite code */
+  room: string;
+  name: string;
+  owner?: string;
+  sb: number;
+  bb: number;
+  start: number;
+  end: number;
+  rows: SettleRow[];
+}
 
 /** One betting action. `amount` = chips put in by this action, `to` = the player's total bet on this street after it. */
 export interface HandAction {
@@ -178,6 +190,7 @@ export type ClientMsg =
   | { t: 'history' }
   | { t: 'approve'; user: string; ok: boolean }
   | { t: 'closeTable' }
+  | { t: 'sessions' }
   | { t: 'act'; type: ActionType; to?: number };
 
 export type ServerMsg =
@@ -190,6 +203,7 @@ export type ServerMsg =
   | { t: 'ev'; e: GameEvent }
   | { t: 'history'; hands: HandLog[]; standings: Standing[] }
   | { t: 'closed'; name: string; rows: SettleRow[] }
+  | { t: 'sessions'; list: SessionRec[] }
   | { t: 'notice'; msg: string }
   | { t: 'error'; msg: string }
   | { t: 'kicked'; msg: string };

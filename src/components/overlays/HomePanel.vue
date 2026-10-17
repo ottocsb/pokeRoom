@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 import { normCode } from '../../protocol';
 import { sfx } from '../../sound';
-import { enterRoom, logout, openSoloSetup, toast, ui } from '../../store';
+import { enterRoom, logout, openRecords, openSoloSetup, toast, ui } from '../../store';
 import NetLine from './NetLine.vue';
 
 const code = ref('');
@@ -25,7 +25,7 @@ function join() {
     <div class="rooms-head">
       <h2>德州扑克</h2>
       <div class="who">
-        <span class="who-av">{{ initial }}</span><b>{{ ui.user ?? '' }}</b><button class="link" id="logout" @click="logout()">退出登录</button>
+        <span class="who-av">{{ initial }}</span><b>{{ ui.user ?? '' }}</b><button class="link" id="go-records" :disabled="!online" @click="openRecords()">历史战绩</button><button class="link" id="logout" @click="logout()">退出登录</button>
       </div>
     </div>
     <div class="home-grid">

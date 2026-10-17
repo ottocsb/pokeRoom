@@ -34,6 +34,7 @@ import SoloSetupPanel from './components/overlays/SoloSetupPanel.vue';
 import GameOverPanel from './components/overlays/GameOverPanel.vue';
 import SettlePanel from './components/overlays/SettlePanel.vue';
 import BuyInPanel from './components/overlays/BuyInPanel.vue';
+import RecordsPanel from './components/overlays/RecordsPanel.vue';
 
 const online = computed(() => ui.mode === 'online');
 const inRoom = computed(() => (game.value, online.value && !!remote.state));
@@ -76,6 +77,7 @@ const overlay = computed(() => {
   if (ui.screen === 'rooms') return 'rooms';
   if (ui.screen === 'solo-setup') return 'solo-setup';
   if (ui.screen === 'create') return 'create';
+  if (ui.screen === 'records') return 'records';
   // owner must answer buy-in requests before doing anything else (cannot be dismissed)
   if (ui.screen === 'table' && requests.value.length) return 'buyin';
   if (ui.screen === 'table' && ui.shareOpen && online.value && remote.state) return 'share';
@@ -273,6 +275,7 @@ onBeforeUnmount(() => {
       <GameOverPanel v-else-if="overlay === 'over'" />
       <SettlePanel v-else-if="overlay === 'settle'" />
       <BuyInPanel v-else-if="overlay === 'buyin'" />
+      <RecordsPanel v-else-if="overlay === 'records'" />
     </div>
   </div>
 </template>

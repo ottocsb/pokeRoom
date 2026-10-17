@@ -19,6 +19,7 @@ import {
   type RoomInfo,
   type SeatView,
   type ServerMsg,
+  type SessionRec,
   type SettleRow,
   type TableState,
 } from '../src/protocol';
@@ -66,6 +67,16 @@ class Store {
       CREATE TABLE IF NOT EXISTS tokens (
         token    TEXT PRIMARY KEY,
         user_key TEXT NOT NULL REFERENCES users(key) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS sessions (
+        key   TEXT PRIMARY KEY,
+        ended INTEGER NOT NULL,
+        data  TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS session_users (
+        session  TEXT NOT NULL,
+        user_key TEXT NOT NULL,
+        PRIMARY KEY (session, user_key)
       );
       CREATE TABLE IF NOT EXISTS hands (
         room    TEXT NOT NULL,
@@ -144,6 +155,20 @@ class Store {
   addHand(room: string, h: HandLog) {
     this.db.prepare('INSERT OR REPLACE INTO hands (room, hand_no, data) VALUES (?, ?, ?)').run(room, h.handNo, JSON.stringify(h));
   }
+  /** final standings of a table, findable by every player who bought in */
+  addSession(key: string, rec: SessionRec) {
+    this.db.exec('BEGIN');
+    this.db.prepare('INSERT OR REPLACE INTO sessions (key, ended, data) VALUES (?, ?, ?)').run(key, rec.end, JSON.stringify(rec));
+    const add = this.db.prepare('INSERT OR IGNORE INTO session_users (session, user_key) VALUES (?, ?)');
+    for (const r of rec.rows) if (r.user) add.run(key, r.user.toLowerCase());
+    this.db.exec('COMMIT');
+  }
+  sessionsOf(user: string): SessionRec[] {
+    const rows = this.db
+      .prepare('SELECT s.data FROM session_users u JOIN sessions s ON s.key = u.session WHERE u.user_key = ? ORDER BY s.ended DESC LIMIT 100')
+      .all(user.toLowerCase()) as { data: string }[];
+    return rows.map((r) => JSON.parse(r.data));
+  }
   hands(room: string): HandLog[] {
     const rows = this.db.prepare('SELECT data FROM hands WHERE room = ? ORDER BY hand_no').all(room) as { data: string }[];
     return rows.map((r) => JSON.parse(r.data));
@@ -187,6 +212,9 @@ class Table {
   private requests: Array<{ user: string; seat: number }> = [];
   /** owner closed the table: settle when the current hand ends */
   private closing = false;
+  private started = Date.now();
+  /** standings already saved to the db */
+  private recorded = false;
 
   constructor(
     public cfg: RoomCfg,
@@ -659,6 +687,12 @@ class Table {
   }
   /** final standings to everyone in the room, then dissolve it */
   private settle() {
+    const rows = this.record();
+    for (const u of this.members) this.hub.send(this.hub.clientOf(u), { t: 'closed', name: this.cfg.name, rows });
+    this.hub.dissolve(this);
+  }
+  /** everyone's buy-in / chips / net; saved once to the db when anyone real bought in */
+  record(): SettleRow[] {
     const chips = new Map<string, number>();
     for (const p of this.seated) chips.set(this.keyOf(p), p.chips);
     const rows: SettleRow[] = [...this.ledger.entries()]
@@ -667,8 +701,16 @@ class Table {
         return { name: e.name, user: e.user, buyIn: e.buyIn, chips: c, net: c - e.buyIn };
       })
       .sort((a, b) => b.net - a.net);
-    for (const u of this.members) this.hub.send(this.hub.clientOf(u), { t: 'closed', name: this.cfg.name, rows });
-    this.hub.dissolve(this);
+    if (!this.recorded && rows.some((r) => r.user)) {
+      this.recorded = true;
+      const { id, name, owner, sb, bb } = this.cfg;
+      try {
+        this.store.addSession(this.logKey, { room: id, name, owner, sb, bb, start: this.started, end: Date.now(), rows });
+      } catch (err) {
+        console.warn('[poker] could not save session', err);
+      }
+    }
+    return rows;
   }
   close() {
     this.game.clearTimers();
@@ -738,6 +780,7 @@ export function createPokerServer(opts: { dataDir: string }) {
     for (let i = tables.length - 1; i >= 0; i--) {
       const t = tables[i];
       if (t.cfg.private && !t.members.size && t.emptySince && now - t.emptySince > EMPTY_ROOM_MS) {
+        t.record();
         t.close();
         tables.splice(i, 1);
       }
@@ -812,6 +855,8 @@ export function createPokerServer(opts: { dataDir: string }) {
         t.join(user);
         return;
       }
+      case 'sessions':
+        return hub.send(c, { t: 'sessions', list: store.sessionsOf(user) });
       case 'leave':
         c.room?.leave(user);
         c.room = null;
@@ -868,7 +913,10 @@ export function createPokerServer(opts: { dataDir: string }) {
     },
     close() {
       clearInterval(beat);
-      tables.forEach((t) => t.close());
+      tables.forEach((t) => {
+        t.record();
+        t.close();
+      });
       for (const ws of wss.clients) ws.terminate();
       wss.close();
     },
