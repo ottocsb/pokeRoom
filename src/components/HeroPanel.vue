@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { cardKey, rankLabel, SUIT_SYMBOL } from '../cards';
 import { describeDraws, describeHole, evaluate } from '../evaluator';
 import { sfx } from '../sound';
-import { can, doAct, game, heroCat, hl, money, onSlider, raiseBounds, setPreAct, setRaise, showCards, statusText, ui } from '../store';
+import { can, doAct, game, heroCat, hl, money, onSlider, raiseBounds, remote, setPreAct, setRaise, showCards, statusText, ui, voteRuns } from '../store';
 import PlayingCard from './PlayingCard.vue';
 
 const handNo = computed(() => game.value.handNo);
@@ -87,6 +87,12 @@ function pre(kind: 'fold' | 'checkfold') {
   sfx.click();
   setPreAct(ui.preAct === kind ? null : kind);
 }
+/** online all-in: pick how many times to deal the rest of the board */
+const runOpts = computed(() => {
+  const h = game.value.human;
+  const rv = online.value ? remote.state?.runVote : null;
+  return rv && h && rv.seats.includes(h.id) ? { mine: rv.mine } : null;
+});
 /** online, after a hand: your cards weren't shown down, so you may show them */
 const showOpts = computed(() => {
   const g = game.value;
@@ -191,7 +197,12 @@ function nextHand() {
           <span v-if="isAllin" class="raise-allin">全下</span>
         </div>
       </div>
-      <div v-if="showOpts" class="actions show-bar">
+      <div v-if="runOpts" class="actions run-bar">
+        <button v-for="n in 3" :key="n" class="act" :class="n === 1 ? 'ghost' : 'raise'" :disabled="!!runOpts.mine" @click="voteRuns(n)">
+          <span>{{ runOpts.mine === n ? '✓ ' : '' }}发 {{ n }} 次</span>
+        </button>
+      </div>
+      <div v-else-if="showOpts" class="actions show-bar">
         <button v-for="c in showOpts.cards" :key="c.k" class="act ghost" :disabled="c.done" @click="showCards([c.k])">
           <span>{{ c.done ? '已秀' : '秀单张' }}</span><span>{{ c.label }}</span>
         </button>

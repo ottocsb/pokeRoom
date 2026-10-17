@@ -62,6 +62,13 @@ function close() {
             <span class="hist-board">
               <i v-for="(c, k) in h.board" :key="k" class="hcard" :class="{ red: isRed(c) }">{{ cardText(c) }}</i>
               <i v-if="!h.board.length" class="dim">未发公共牌</i>
+              <!-- run more than once: the cards each extra run dealt differently -->
+              <template v-for="(b, r) in h.extraBoards ?? []" :key="`run${r}`">
+                <i class="dim">/</i>
+                <template v-for="(c, k) in b" :key="k">
+                  <i v-if="cardText(c) !== (h.board[k] && cardText(h.board[k]))" class="hcard" :class="{ red: isRed(c) }">{{ cardText(c) }}</i>
+                </template>
+              </template>
             </span>
             <small>{{ timeText(h.time) }}</small>
           </div>

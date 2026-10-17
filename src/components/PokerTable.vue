@@ -127,6 +127,13 @@ const board = computed(() => {
   return out;
 });
 
+/** 2nd / 3rd run of an all-in board, under the first (dealt after it, so empty slots until then) */
+const extra = computed(() =>
+  game.value.extraBoards.map((b, r) =>
+    Array.from({ length: 5 }, (_, k) => (b[k] ? { card: b[k], k: `x${r}-${k}`, delay: (k < 3 ? k : 0) * 110 } : null)),
+  ),
+);
+
 const pot = computed(() => {
   const g = game.value;
   return g.phase === 'handover' ? g.pots.reduce((s, p) => s + p.amount, 0) : g.potTotal();
@@ -172,11 +179,19 @@ function sit(seat: number) {
       <div class="pot" id="pot" :class="{ clickable: ui.mode === 'online' }" title="查看本手行动路线" @click="toggleFlow">
         <template v-if="pot > 0"><span>底池</span><b>{{ money(pot) }}</b></template>
       </div>
-      <div class="board" id="board">
-        <template v-for="(b, k) in board" :key="b ? `${handNo}-${b.k}` : `slot${k}`">
-          <PlayingCard v-if="b" :card="b.card" :k="b.k" :cls="b.cls" :delay="b.delay" />
-          <div v-else class="card slot"></div>
-        </template>
+      <div class="board" id="board" :class="{ multi: extra.length }" :style="{ '--runs': extra.length + 1 }">
+        <div class="board-row">
+          <template v-for="(b, k) in board" :key="b ? `${handNo}-${b.k}` : `slot${k}`">
+            <PlayingCard v-if="b" :card="b.card" :k="b.k" :cls="b.cls" :delay="b.delay" />
+            <div v-else class="card slot"></div>
+          </template>
+        </div>
+        <div v-for="(row, r) in extra" :key="`run${r}`" class="board-row">
+          <template v-for="(c, k) in row" :key="c ? `${handNo}-${c.k}` : `slot${r}-${k}`">
+            <PlayingCard v-if="c" :card="c.card" :k="c.k" :delay="c.delay" />
+            <div v-else class="card slot"></div>
+          </template>
+        </div>
       </div>
       <div class="msg" id="msg" :class="{ show: !!msg }">{{ msg }}</div>
       <div id="seats">

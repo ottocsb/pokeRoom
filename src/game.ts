@@ -127,6 +127,8 @@ export class Game {
   room: RoomConfig = { ...DEFAULT_ROOM };
   players: Player[] = [];
   board: Card[] = [];
+  /** run it more than once: the 2nd / 3rd board (each starts with the cards dealt before the all-in) */
+  extraBoards: Card[][] = [];
   deck: Card[] = [];
   street: Street = 'idle';
   phase: Phase = 'idle';
@@ -144,8 +146,14 @@ export class Game {
 
   onUpdate: () => void = () => {};
   onEvent: (e: GameEvent) => void = () => {};
+  /** all-in before the river: return true to pause until runOut(n) says how many times to deal the rest */
+  onRunOut: () => boolean = () => false;
 
   private timers: ReturnType<typeof setTimeout>[] = [];
+  /** this hand's all-in run-out was already offered */
+  private runAsked = false;
+  /** waiting for runOut(n) */
+  private runPaused = false;
 
   get sb() {
     return this.room.sb;
@@ -249,6 +257,9 @@ export class Game {
     }
     this.handNo++;
     this.board = [];
+    this.extraBoards = [];
+    this.runAsked = false;
+    this.runPaused = false;
     this.pots = [];
     this.summary = null;
     for (const p of this.players) {
@@ -429,16 +440,53 @@ export class Game {
     }
     this.currentBet = 0;
     this.minRaise = this.bb;
-    if (this.street === 'river') return this.showdown();
+    if (this.street === 'river') {
+      // run more than once: after the first board, deal the next one street by street as well
+      const next = this.extraBoards.find((b) => b.length < 5);
+      if (!next) return this.showdown();
+      const k = next.length < 3 ? 3 - next.length : 1;
+      for (let i = 0; i < k; i++) next.push(this.deck.pop()!);
+      this.onEvent({ type: 'board', count: next.length });
+      this.onUpdate();
+      this.schedule(() => this.endStreet(), 1100);
+      return;
+    }
 
+    if (!this.runAsked && this.players.filter((p) => this.canAct(p)).length <= 1) {
+      // all-in with cards still to come: hands are turned up, the table may agree to run it more than once
+      this.runAsked = true;
+      for (const p of this.players) if (this.inHand(p)) p.revealed = true;
+      if (this.onRunOut()) {
+        this.runPaused = true;
+        this.turn = -1;
+        this.onUpdate();
+        return;
+      }
+    }
+    this.dealStreet();
+  }
+
+  /** Resume a paused run-out: deal the rest of the board `n` times (1..3). */
+  runOut(n: number) {
+    if (this.phase !== 'betting' || !this.runPaused) return;
+    this.runPaused = false;
+    const runs = Math.max(1, Math.min(3, Math.floor(n) || 1));
+    this.extraBoards = Array.from({ length: runs - 1 }, () => [...this.board]);
+    this.dealStreet();
+  }
+
+  private dealStreet() {
+    const deal = (k: number) => {
+      for (let i = 0; i < k; i++) this.board.push(this.deck.pop()!);
+    };
     if (this.street === 'preflop') {
-      this.board.push(this.deck.pop()!, this.deck.pop()!, this.deck.pop()!);
+      deal(3);
       this.street = 'flop';
     } else if (this.street === 'flop') {
-      this.board.push(this.deck.pop()!);
+      deal(1);
       this.street = 'turn';
     } else {
-      this.board.push(this.deck.pop()!);
+      deal(1);
       this.street = 'river';
     }
     this.onEvent({ type: 'board', count: this.board.length });
@@ -495,30 +543,51 @@ export class Game {
 
     this.pots = [];
     const n = this.players.length;
+    const boards = [this.board, ...this.extraBoards];
+    let mainRuns: PotResult[] = [];
     for (const pot of pots) {
-      let best: Player[] = [];
-      for (const p of pot.eligible) {
-        if (!best.length) best = [p];
-        else {
-          const c = compareScore(p.result!.score, best[0].result!.score);
-          if (c > 0) best = [p];
-          else if (c === 0) best.push(p);
+      // run more than once: each board plays for an equal part of the pot (the odd chips go to the first run)
+      const runs = pot.eligible.length > 1 ? boards.length : 1;
+      const part = Math.floor(pot.amount / runs);
+      const results: PotResult[] = [];
+      for (let r = 0; r < runs; r++) {
+        const amount = part + (r === 0 ? pot.amount - part * runs : 0);
+        const res = new Map(pot.eligible.map((p) => [p, r === 0 ? p.result! : evaluate([...p.hole, ...boards[r]])]));
+        let best: Player[] = [];
+        for (const p of pot.eligible) {
+          if (!best.length) best = [p];
+          else {
+            const c = compareScore(res.get(p)!.score, res.get(best[0])!.score);
+            if (c > 0) best = [p];
+            else if (c === 0) best.push(p);
+          }
         }
+        const share = Math.floor(amount / best.length);
+        let rem = amount - share * best.length;
+        const ordered = [...best].sort((a, b) => ((a.id - this.dealer - 1 + n) % n) - ((b.id - this.dealer - 1 + n) % n));
+        for (const w of ordered) {
+          const amt = share + (rem > 0 ? 1 : 0);
+          if (rem > 0) rem--;
+          w.chips += amt;
+          w.won += amt;
+        }
+        const refund = pot.eligible.length === 1;
+        const desc = refund ? '退回未跟注筹码' : (runs > 1 ? `第${r + 1}次 ` : '') + res.get(best[0])!.desc;
+        results.push({ amount, winners: best.map((b) => b.id), desc, refund });
       }
-      const share = Math.floor(pot.amount / best.length);
-      let rem = pot.amount - share * best.length;
-      const ordered = [...best].sort((a, b) => ((a.id - this.dealer - 1 + n) % n) - ((b.id - this.dealer - 1 + n) % n));
-      for (const w of ordered) {
-        const amt = share + (rem > 0 ? 1 : 0);
-        if (rem > 0) rem--;
-        w.chips += amt;
-        w.won += amt;
-      }
-      const refund = pot.eligible.length === 1;
-      this.pots.push({ amount: pot.amount, winners: best.map((b) => b.id), desc: refund ? '退回未跟注筹码' : best[0].result!.desc, refund });
+      if (!mainRuns.length && runs > 1) mainRuns = results;
+      this.pots.push(...results);
     }
     const main = this.pots.find((p) => !p.refund) ?? this.pots[0];
-    if (main) {
+    if (mainRuns.length) {
+      const ids = [...new Set(mainRuns.flatMap((p) => p.winners))];
+      this.summary = {
+        kind: ids.length > 1 ? 'split' : 'win',
+        names: ids.map((i) => this.players[i].name).join('、'),
+        desc: `发${mainRuns.length}次`,
+        amount: mainRuns.reduce((s, p) => s + p.amount, 0),
+      };
+    } else if (main) {
       this.summary = {
         kind: main.winners.length > 1 ? 'split' : 'win',
         names: main.winners.map((i) => this.players[i].name).join('、'),

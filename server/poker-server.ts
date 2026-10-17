@@ -13,6 +13,7 @@ import {
   CODE_CHARS,
   EMOTES,
   normCode,
+  RUN_VOTE_MS,
   sanitizeCreate,
   TURN_MS,
   type ClientMsg,
@@ -225,6 +226,8 @@ class Table {
   /** last emote time per user (simple flood guard) */
   private lastEmote = new Map<string, number>();
   private lastChat = new Map<string, number>();
+  /** all-in players choosing how many times to run the board */
+  private runVote: { seats: number[]; votes: Map<number, number>; deadline: number; timer: ReturnType<typeof setTimeout> } | null = null;
 
   constructor(
     public cfg: RoomCfg,
@@ -241,6 +244,7 @@ class Table {
     g.players = Array.from({ length: cfg.max }, (_, i) => emptySeat(i));
     g.onUpdate = () => this.changed();
     g.onEvent = (e) => this.onEvent(e);
+    g.onRunOut = () => this.askRuns();
   }
 
   private get seated() {
@@ -456,7 +460,9 @@ class Table {
     g.phase = 'idle';
     g.street = 'idle';
     g.turn = -1;
+    this.clearRunVote();
     g.board = [];
+    g.extraBoards = [];
     g.pots = [];
     g.summary = null;
     g.currentBet = 0;
@@ -510,6 +516,37 @@ class Table {
     this.turnTimer = null;
     if (g.turn !== i || g.phase !== 'betting') return;
     g.act(i, !p.leaving && g.toCall(p) === 0 ? { type: 'check' } : { type: 'fold' });
+  }
+  /** all-in before the river: let the players still in (all real and online) pick 1–3 runs */
+  private askRuns(): boolean {
+    const g = this.game;
+    const live = g.players.filter((p) => g.inHand(p));
+    if (live.length < 2 || live.some((p) => !p.user || p.offline || p.leaving)) return false;
+    const timer = setTimeout(() => this.endRunVote(), RUN_VOTE_MS);
+    this.runVote = { seats: live.map((p) => p.id), votes: new Map(), deadline: Date.now() + RUN_VOTE_MS, timer };
+    return true;
+  }
+  voteRuns(user: string, n: number) {
+    const v = this.runVote;
+    const i = this.seatOf(user);
+    if (!v || !v.seats.includes(i) || v.votes.has(i)) return;
+    const runs = Math.max(1, Math.min(3, n));
+    v.votes.set(i, runs);
+    // the smallest pick wins, so a single 1 settles it
+    if (runs === 1 || v.votes.size === v.seats.length) this.endRunVote();
+    else this.changed();
+  }
+  private endRunVote() {
+    const v = this.runVote;
+    if (!v) return;
+    this.clearRunVote();
+    const runs = v.votes.size === v.seats.length ? Math.min(...v.votes.values()) : 1;
+    for (const u of this.members) this.hub.send(this.hub.clientOf(u), { t: 'notice', msg: `全下协商：发 ${runs} 次` });
+    this.game.runOut(runs);
+  }
+  private clearRunVote() {
+    if (this.runVote) clearTimeout(this.runVote.timer);
+    this.runVote = null;
   }
   act(user: string, type: ActionType, to?: number) {
     const i = this.seatOf(user);
@@ -590,6 +627,7 @@ class Table {
       lp.collected = lp.net + p.total - lp.uncalled;
     }
     log.board = g.board;
+    if (g.extraBoards.length) log.extraBoards = g.extraBoards;
     log.summary = g.summary;
     try {
       this.store.addHand(this.logKey, log);
@@ -690,6 +728,13 @@ class Table {
       actions: this.log?.actions ?? [],
       requests: user === this.cfg.owner ? this.requests : this.requests.filter((r) => r.user === user),
       closing: this.closing,
+      extraBoards: g.extraBoards,
+      runVote: this.runVote && {
+        seats: this.runVote.seats,
+        voted: [...this.runVote.votes.keys()],
+        mine: this.runVote.votes.get(this.seatOf(user)) ?? 0,
+        left: Math.max(0, this.runVote.deadline - Date.now()),
+      },
     };
   }
   /** after a hand, a player whose cards were not shown down may show one or both */
@@ -768,6 +813,7 @@ class Table {
   }
   close() {
     this.game.clearTimers();
+    this.clearRunVote();
     this.clearTurn();
     if (this.nextTimer) clearTimeout(this.nextTimer);
   }
@@ -931,6 +977,7 @@ export function createPokerServer(opts: { dataDir: string }) {
     else if (m.t === 'chat') err = t.chat(user, String(m.text ?? ''));
     else if (m.t === 'show') t.show(user, Array.isArray(m.cards) ? m.cards : []);
     else if (m.t === 'emote') err = t.emote(user, Number(m.to) | 0, String(m.emoji ?? ''));
+    else if (m.t === 'runs') t.voteRuns(user, Number(m.n) | 0);
     else if (m.t === 'act' && ACTIONS.has(m.type)) t.act(user, m.type, Number.isFinite(m.to) ? Math.floor(m.to!) : undefined);
     if (err) hub.send(c, { t: 'error', msg: err });
   }

@@ -231,6 +231,7 @@ export function summaryText() {
   const s = game.value.summary;
   if (!s) return '';
   if (s.kind === 'fold') return `${s.names} 赢得 ${money(s.amount)}（其余玩家弃牌）`;
+  if (/^发\d次$/.test(s.desc)) return `${s.desc}：${s.names} 共${s.kind === 'split' ? '分' : '赢'} ${money(s.amount)}`;
   return `${s.names} 以 ${s.desc} ${s.kind === 'split' ? '平分' : '赢得'} ${money(s.amount)}`;
 }
 
@@ -315,6 +316,12 @@ export const statusText = computed(() => {
   const humansOnline = online ? g.players.filter((p) => !p.empty).length : 0;
   if (online && g.phase === 'idle') return humansOnline < 2 ? '等待其他玩家入座…（可点顶栏「+电脑」补位）' : '即将开始发牌…';
   if (online && h.waiting) return '已入座，下一手开始加入';
+  const rv = online ? remote.state?.runVote : null;
+  if (rv) {
+    const secs = Math.ceil(Math.max(0, remote.runDeadline - ui.now) / 1000);
+    if (rv.seats.includes(h.id) && !rv.mine) return `全下！选择剩下的牌发几次（按各方最少的选择，${secs} 秒内不选按 1 次）`;
+    return `等待全下玩家协商发牌次数… ${secs} 秒`;
+  }
   if (g.phase === 'betting') {
     if (my && h.locked) return '对手不足额全下：你只能跟注或弃牌' + clockText();
     if (my) return '轮到你了' + clockText();
@@ -380,6 +387,11 @@ export function sendEmote(to: number, emoji: string) {
 }
 
 /** online, after a hand: show some of your hole cards to the table */
+/** all-in run-out: how many times to deal the rest of the board */
+export function voteRuns(n: number) {
+  sfx.click();
+  net.send({ t: 'runs', n });
+}
 export function showCards(cards: number[]) {
   sfx.click();
   net.send({ t: 'show', cards });
@@ -718,7 +730,7 @@ local.onEvent = (e) => {
 
 // tick the online action clock
 setInterval(() => {
-  if (ui.mode === 'online' && remote.turnDeadline) ui.now = Date.now();
+  if (ui.mode === 'online' && (remote.turnDeadline || remote.runDeadline)) ui.now = Date.now();
 }, 250);
 
 // test bridge (optional; gameplay never depends on it)

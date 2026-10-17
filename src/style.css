@@ -297,9 +297,22 @@ button {
   top: 50%;
   transform: translate(-50%, -50%);
   display: flex;
+  flex-direction: column;
   gap: calc(var(--bc) * 0.12);
   font-size: calc(var(--bc) / 2.5);
   z-index: 2;
+}
+.board-row {
+  display: flex;
+  gap: calc(var(--bc) * 0.12);
+}
+/* all-in run more than once: smaller boards stacked down from where the single board starts */
+.board.multi {
+  font-size: calc(var(--bc) / (1.1 + 1.25 * var(--runs)));
+  transform: translate(-50%, calc(var(--bc) * -0.7));
+}
+.board.multi ~ .msg {
+  transform: translate(-50%, calc(var(--bc) * 1.85));
 }
 .pot {
   position: absolute;

@@ -9,6 +9,7 @@ export type TableLike = Pick<
   | 'room'
   | 'players'
   | 'board'
+  | 'extraBoards'
   | 'street'
   | 'phase'
   | 'dealer'
@@ -132,6 +133,8 @@ export class RemoteTable implements TableLike {
   mySeat = -1;
   turnDeadline = 0;
   turnTotal = 0;
+  /** when the all-in run vote times out (0 = no vote) */
+  runDeadline = 0;
   constructor(private net: Net) {}
 
   apply(s: TableState) {
@@ -140,6 +143,7 @@ export class RemoteTable implements TableLike {
     this.room = { max: s.room.max, players: s.room.max, sb: s.room.sb, bb: s.room.bb, startChips: s.room.buyIn };
     this.turnDeadline = s.turnLeft > 0 ? Date.now() + s.turnLeft : 0;
     this.turnTotal = s.turnTotal;
+    this.runDeadline = s.runVote ? Date.now() + s.runVote.left : 0;
     this.players = s.seats.map((v, id): Player => {
       if (!v)
         return {
@@ -175,6 +179,9 @@ export class RemoteTable implements TableLike {
 
   get board() {
     return this.state?.board ?? [];
+  }
+  get extraBoards() {
+    return this.state?.extraBoards ?? [];
   }
   get street() {
     return this.state?.street ?? 'idle';

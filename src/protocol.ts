@@ -5,6 +5,8 @@ import type { ActionType, GameEvent, HandSummary, Phase, PotResult, Street } fro
 
 export const WS_PATH = '/poker-ws';
 export const TURN_MS = 25000;
+/** time to agree on running an all-in board more than once (unanswered = once) */
+export const RUN_VOTE_MS = 10000;
 
 export interface RoomInfo {
   id: string;
@@ -110,6 +112,10 @@ export interface TableState {
   requests: Array<{ user: string; seat: number }>;
   /** owner closed the table; it settles when the current hand ends */
   closing: boolean;
+  /** the 2nd / 3rd board when the all-in was run more than once */
+  extraBoards: Card[][];
+  /** all-in players choosing how many times to deal the rest (the smallest pick wins) */
+  runVote: { seats: number[]; voted: number[]; mine: number; left: number } | null;
 }
 /** One player's line in the final settlement */
 export interface SettleRow {
@@ -153,6 +159,8 @@ export interface HandLog {
   /** dealer seat */
   button: number;
   board: Card[];
+  /** the 2nd / 3rd board when run more than once */
+  extraBoards?: Card[][];
   summary: HandSummary | null;
   /** in order, blinds first */
   actions: HandAction[];
@@ -200,6 +208,7 @@ export type ClientMsg =
   | { t: 'emote'; to: number; emoji: string }
   | { t: 'show'; cards: number[] }
   | { t: 'chat'; text: string }
+  | { t: 'runs'; n: number }
   | { t: 'act'; type: ActionType; to?: number };
 
 export type ServerMsg =
