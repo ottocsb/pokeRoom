@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "nodes": {
+    "doc-main": {
+      "x": 96,
+      "y": 96
+    },
+    "mockup-table": {
+      "x": 96,
+      "y": 576
+    },
+    "felt-classic": {
+      "x": 96,
+      "y": 1056
+    },
+    "felt-neon": {
+      "x": 656,
+      "y": 96
+    },
+    "felt-royal": {
+      "x": 656,
+      "y": 576
+    },
+    "felt-ink": {
+      "x": 656,
+      "y": 1056
+    }
+  },
+  "viewport": {
+    "x": -30,
+    "y": -932,
+    "zoom": 1
+  },
+  "view": "canvas"
+}

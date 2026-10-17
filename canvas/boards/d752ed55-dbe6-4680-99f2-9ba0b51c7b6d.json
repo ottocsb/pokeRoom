@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "nodes": [
+    {
+      "id": "doc-main",
+      "type": "document",
+      "data": {
+        "documentId": "design-main"
+      },
+      "title": "������ĵ�"
+    },
+    {
+      "id": "mockup-table",
+      "type": "image",
+      "data": {
+        "prompt": "Game UI mockup of a Texas Hold'em poker web game, 16:9. Oval green felt table with dark walnut rail, 5 seats around it with circular avatars, chip stacks and name plates, five community cards in center with pot amount above, player's two hole cards at bottom enlarged with a glowing gold label 'Two Pair' beneath them, bottom action bar with buttons Fold, Check/Call, Raise with a slider. Elegant casino typography, warm lighting, clean modern flat-ish UI.",
+        "resolution": "1K",
+        "aspectRatio": "16:9",
+        "images": []
+      },
+      "title": "�Ӿ��壺����������",
+      "description": "�ؼ���Ļ�Ӿ����򣺾�������������5 ����λ�������ơ��׳ء��ײ���������������ʾ��"
+    },
+    {
+      "id": "felt-classic",
+      "type": "image",
+      "data": {
+        "prompt": "Top-down seamless poker table felt texture, square, soft subtle fabric weave, faint centered decorative emblem, no text, no cards, no chips, even lighting, rich casino green baize, subtle darker vignette, faint gold laurel emblem in center.",
+        "resolution": "1K",
+        "aspectRatio": "1:1",
+        "images": []
+      },
+      "title": "��������������",
+      "description": "����������������"
+    },
+    {
+      "id": "felt-neon",
+      "type": "image",
+      "data": {
+        "prompt": "Top-down seamless poker table felt texture, square, soft subtle fabric weave, faint centered decorative emblem, no text, no cards, no chips, even lighting, deep midnight indigo velvet felt, faint cyan and magenta geometric neon line pattern, synthwave style emblem in center glowing softly.",
+        "resolution": "1K",
+        "aspectRatio": "1:1",
+        "images": []
+      },
+      "title": "��������ҹ�޺�",
+      "description": "�޺�������������"
+    },
+    {
+      "id": "felt-royal",
+      "type": "image",
+      "data": {
+        "prompt": "Top-down seamless poker table felt texture, square, soft subtle fabric weave, faint centered decorative emblem, no text, no cards, no chips, even lighting, luxurious burgundy wine red velvet felt, faint gold damask baroque pattern, gold crown emblem in center.",
+        "resolution": "1K",
+        "aspectRatio": "1:1",
+        "images": []
+      },
+      "title": "�������ʼҾƺ�",
+      "description": "�ʼ�������������"
+    },
+    {
+      "id": "felt-ink",
+      "type": "image",
+      "data": {
+        "prompt": "Top-down seamless poker table felt texture, square, soft subtle fabric weave, faint centered decorative emblem, no text, no cards, no chips, even lighting, pale jade green silk with Chinese ink wash mountains and clouds painted faintly, rice paper texture, red seal-like round emblem in center.",
+        "resolution": "1K",
+        "aspectRatio": "1:1",
+        "images": []
+      },
+      "title": "����������ī��",
+      "description": "����������������"
+    }
+  ],
+  "edges": [],
+  "id": "d752ed55-dbe6-4680-99f2-9ba0b51c7b6d"
+}

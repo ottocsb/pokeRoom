@@ -1,0 +1,97 @@
+[
+  {
+    "id": "65741e2a-cddb-4702-ae54-3be14b48c262",
+    "toolId": "generate-image",
+    "createdAt": "2026-10-09T05:48:17.921Z",
+    "status": "failed",
+    "title": "Top-down seamless poker table felt texture, square, soft subtle fabric weave, faint centered decorative emblem, no text, no cards, no chips, even lighting, pale jade green silk with Chinese ink wash m",
+    "context": {
+      "projectId": "59430fc2-d315-4fda-813b-c1fed0be887f",
+      "boardId": "d752ed55-dbe6-4680-99f2-9ba0b51c7b6d",
+      "nodeId": "felt-ink"
+    },
+    "input": {
+      "prompt": "Top-down seamless poker table felt texture, square, soft subtle fabric weave, faint centered decorative emblem, no text, no cards, no chips, even lighting, pale jade green silk with Chinese ink wash mountains and clouds painted faintly, rice paper texture, red seal-like round emblem in center.",
+      "resolution": "1K",
+      "aspectRatio": "1:1",
+      "images": []
+    },
+    "error": "Image generation is not configured"
+  },
+  {
+    "id": "68aa9db8-b1af-4ac5-a3e6-a4a24469c87b",
+    "toolId": "generate-image",
+    "createdAt": "2026-10-09T05:48:17.915Z",
+    "status": "failed",
+    "title": "Top-down seamless poker table felt texture, square, soft subtle fabric weave, faint centered decorative emblem, no text, no cards, no chips, even lighting, rich casino green baize, subtle darker vigne",
+    "context": {
+      "projectId": "59430fc2-d315-4fda-813b-c1fed0be887f",
+      "boardId": "d752ed55-dbe6-4680-99f2-9ba0b51c7b6d",
+      "nodeId": "felt-classic"
+    },
+    "input": {
+      "prompt": "Top-down seamless poker table felt texture, square, soft subtle fabric weave, faint centered decorative emblem, no text, no cards, no chips, even lighting, rich casino green baize, subtle darker vignette, faint gold laurel emblem in center.",
+      "resolution": "1K",
+      "aspectRatio": "1:1",
+      "images": []
+    },
+    "error": "Image generation is not configured"
+  },
+  {
+    "id": "658d25e4-b75f-4ac0-90bd-70b170e645ec",
+    "toolId": "generate-image",
+    "createdAt": "2026-10-09T05:48:17.909Z",
+    "status": "failed",
+    "title": "Top-down seamless poker table felt texture, square, soft subtle fabric weave, faint centered decorative emblem, no text, no cards, no chips, even lighting, deep midnight indigo velvet felt, faint cyan",
+    "context": {
+      "projectId": "59430fc2-d315-4fda-813b-c1fed0be887f",
+      "boardId": "d752ed55-dbe6-4680-99f2-9ba0b51c7b6d",
+      "nodeId": "felt-neon"
+    },
+    "input": {
+      "prompt": "Top-down seamless poker table felt texture, square, soft subtle fabric weave, faint centered decorative emblem, no text, no cards, no chips, even lighting, deep midnight indigo velvet felt, faint cyan and magenta geometric neon line pattern, synthwave style emblem in center glowing softly.",
+      "resolution": "1K",
+      "aspectRatio": "1:1",
+      "images": []
+    },
+    "error": "Image generation is not configured"
+  },
+  {
+    "id": "6b3b1401-46c0-4bb1-be4b-7256b330d6e6",
+    "toolId": "generate-image",
+    "createdAt": "2026-10-09T05:48:17.903Z",
+    "status": "failed",
+    "title": "Top-down seamless poker table felt texture, square, soft subtle fabric weave, faint centered decorative emblem, no text, no cards, no chips, even lighting, luxurious burgundy wine red velvet felt, fai",
+    "context": {
+      "projectId": "59430fc2-d315-4fda-813b-c1fed0be887f",
+      "boardId": "d752ed55-dbe6-4680-99f2-9ba0b51c7b6d",
+      "nodeId": "felt-royal"
+    },
+    "input": {
+      "prompt": "Top-down seamless poker table felt texture, square, soft subtle fabric weave, faint centered decorative emblem, no text, no cards, no chips, even lighting, luxurious burgundy wine red velvet felt, faint gold damask baroque pattern, gold crown emblem in center.",
+      "resolution": "1K",
+      "aspectRatio": "1:1",
+      "images": []
+    },
+    "error": "Image generation is not configured"
+  },
+  {
+    "id": "16c15bc6-df98-4042-9c0f-9fafa856383f",
+    "toolId": "generate-image",
+    "createdAt": "2026-10-09T05:48:17.896Z",
+    "status": "failed",
+    "title": "Game UI mockup of a Texas Hold'em poker web game, 16:9. Oval green felt table with dark walnut rail, 5 seats around it with circular avatars, chip stacks and name plates, five community cards in cente",
+    "context": {
+      "projectId": "59430fc2-d315-4fda-813b-c1fed0be887f",
+      "boardId": "d752ed55-dbe6-4680-99f2-9ba0b51c7b6d",
+      "nodeId": "mockup-table"
+    },
+    "input": {
+      "prompt": "Game UI mockup of a Texas Hold'em poker web game, 16:9. Oval green felt table with dark walnut rail, 5 seats around it with circular avatars, chip stacks and name plates, five community cards in center with pot amount above, player's two hole cards at bottom enlarged with a glowing gold label 'Two Pair' beneath them, bottom action bar with buttons Fold, Check/Call, Raise with a slider. Elegant casino typography, warm lighting, clean modern flat-ish UI.",
+      "resolution": "1K",
+      "aspectRatio": "16:9",
+      "images": []
+    },
+    "error": "Image generation is not configured"
+  }
+]

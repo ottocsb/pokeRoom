@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "boards": [
+    {
+      "id": "d752ed55-dbe6-4680-99f2-9ba0b51c7b6d",
+      "name": "德州扑克"
+    }
+  ],
+  "documents": [
+    {
+      "id": "design-main",
+      "title": "主设计文档"
+    }
+  ],
+  "mainDocumentId": "design-main"
+}
