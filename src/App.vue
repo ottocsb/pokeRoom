@@ -20,6 +20,8 @@ import {
   startRoom,
   toggleSound,
   toggleUnit,
+  toggleVoice,
+  toggleVoiceMute,
   ui,
 } from './store';
 import PokerTable from './components/PokerTable.vue';
@@ -46,7 +48,8 @@ const meta = computed(() => {
   const roomName = st ? `${st.room.name}${st.room.private ? ` (${st.room.id})` : ''} · ` : '';
   const watchers = st?.watchers.length ? ` · 旁观 ${st.watchers.length}` : '';
   const bomb = st?.room.bomb ? ` · 暴击 ${st.room.bomb}BB` : '';
-  return `${roomName}${g.room.max === 9 ? '9人桌' : '6人桌'} · 盲注 ${g.sb}/${g.bb}${bomb}${g.handNo ? ` · 第 ${g.handNo} 手` : ''}${watchers}`;
+  const voice = st?.voice.length ? ` · 语音 ${st.voice.length}` : '';
+  return `${roomName}${g.room.max === 9 ? '9人桌' : '6人桌'} · 盲注 ${g.sb}/${g.bb}${bomb}${g.handNo ? ` · 第 ${g.handNo} 手` : ''}${watchers}${voice}`;
 });
 /** action line of the current hand, opened by clicking the pot */
 const flow = computed(() => {
@@ -203,6 +206,20 @@ onBeforeUnmount(() => {
         </button>
         <button class="tbtn" id="btn-history" title="查看本房间每手牌和玩家输赢" :hidden="!inRoom" @click="onHistory">
           <span class="ico">☰</span><span class="lbl">战绩</span>
+        </button>
+        <button
+          class="tbtn"
+          id="btn-voice"
+          :class="{ on: ui.voiceOn }"
+          :title="ui.voiceOn ? '退出语音频道' : '加入语音频道，和房间里的玩家语音交流（需要麦克风权限）'"
+          :hidden="!inRoom"
+          :disabled="ui.voiceBusy"
+          @click="toggleVoice"
+        >
+          <span class="ico">🎙</span><span class="lbl">{{ ui.voiceOn ? '退出语音' : '语音' }}</span>
+        </button>
+        <button class="tbtn" id="btn-mic" :class="{ off: ui.voiceMuted }" title="开关自己的麦克风" :hidden="!inRoom || !ui.voiceOn" @click="toggleVoiceMute">
+          <span class="ico">{{ ui.voiceMuted ? '🔇' : '🔊' }}</span><span class="lbl">{{ ui.voiceMuted ? '已静音' : '麦克风' }}</span>
         </button>
         <button class="tbtn" id="btn-stand" title="起身离座（旁观）" :hidden="!seated" @click="send('stand')">
           <span class="ico">⇣</span><span class="lbl">起身</span>

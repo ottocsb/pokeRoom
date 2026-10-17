@@ -6,6 +6,7 @@ import { DEFAULT_ROOM, Game, GameEvent, Player, RoomConfig } from './game';
 import { applyTheme, loadTheme } from './themes';
 import { isMuted, setMuted, sfx } from './sound';
 import { Net, RemoteTable, savedToken, saveToken, TableLike } from './remote';
+import { Voice } from './voice';
 import { sanitizeCreate, type CreateRoomCfg, type HandLog, type RoomInfo, type ServerMsg, type SessionRec, type SettleRow, type Standing } from './protocol';
 
 // ---------- persisted prefs ----------
@@ -31,6 +32,7 @@ export const local = new Game();
 /** Online: connection + mirror of the server table */
 export const net = new Net();
 export const remote = new RemoteTable(net);
+export const voice = new Voice((m) => net.send(m));
 /** What the view draws: `local` in practice mode, `remote` inside an online room.
  *  The engines are plain objects; call refresh() after they change so Vue re-renders. */
 export const game = shallowRef<TableLike>(local);
@@ -97,6 +99,10 @@ export const ui = reactive({
   /** phones: the chat sits behind a button; open state + messages missed meanwhile */
   chatOpen: false,
   chatUnread: 0,
+  /** in the voice channel / own mic muted */
+  voiceOn: false,
+  voiceMuted: false,
+  voiceBusy: false,
   /** latest chat line per seat, shown as a bubble for a few seconds */
   says: {} as Record<number, { id: number; text: string }>,
   /** ticks while an online action clock is running */
@@ -423,6 +429,39 @@ export function sendChat(text: string) {
   if (text.trim()) net.send({ t: 'chat', text: text.trim() });
 }
 
+// ---------- voice chat ----------
+export async function toggleVoice() {
+  sfx.click();
+  if (voice.on) return stopVoice();
+  if (ui.voiceBusy) return;
+  ui.voiceBusy = true;
+  try {
+    await voice.join();
+    // left the room while the permission prompt was up
+    if (ui.mode !== 'online') return voice.leave(false);
+    net.send({ t: 'voice', on: true });
+    ui.voiceOn = true;
+    ui.voiceMuted = false;
+    toast('已加入语音');
+  } catch (e) {
+    const name = (e as Error).name;
+    toast(name === 'NotAllowedError' ? '没有麦克风权限，请在浏览器设置中允许' : name === 'NotFoundError' ? '没有找到麦克风' : (e as Error).message || '无法打开麦克风');
+  } finally {
+    ui.voiceBusy = false;
+  }
+}
+export function toggleVoiceMute() {
+  sfx.click();
+  voice.setMuted(!voice.muted);
+  ui.voiceMuted = voice.muted;
+}
+/** leave the voice channel (`tell` = false when the server already dropped us) */
+function stopVoice(tell = true) {
+  voice.leave(tell);
+  ui.voiceOn = false;
+  ui.voiceMuted = false;
+}
+
 // ---------- prefs toggles ----------
 export function toggleUnit() {
   ui.unit = ui.unit === 'bb' ? 'chips' : 'bb';
@@ -463,6 +502,7 @@ function useLocal() {
   if (ui.mode === 'solo') return;
   ui.mode = 'solo';
   game.value = local;
+  stopVoice(false);
   ui.chat = [];
   ui.chatFresh = false;
   ui.chatOpen = false;
@@ -594,6 +634,8 @@ net.onOpen = () => {
 };
 net.onStatus = (s) => {
   ui.netStatus = s;
+  // the server drops a disconnected user from the voice channel
+  if (s !== 'open') stopVoice(false);
   if (s === 'closed' && !ui.user) {
     ui.autoLogin = false;
     if (ui.authBusy) {
@@ -656,6 +698,7 @@ net.onMessage = (m: ServerMsg) => {
       ui.screen = 'table';
       const before = remote.mySeat;
       remote.apply(m.state);
+      voice.sync(m.state.voice);
       if (before !== remote.mySeat) seen.clear();
       refresh();
       break;
@@ -695,6 +738,12 @@ net.onMessage = (m: ServerMsg) => {
       break;
     case 'chat':
       if (ui.mode === 'online') onChat(m.user, m.seat, m.text);
+      break;
+    case 'voicePeers':
+      voice.callAll(m.users).catch(() => {});
+      break;
+    case 'rtc':
+      voice.onSignal(m.from, m.data as never).catch(() => {});
       break;
     case 'notice':
     case 'error':

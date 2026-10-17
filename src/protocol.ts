@@ -121,6 +121,8 @@ export interface TableState {
   requests: Array<{ user: string; seat: number }>;
   /** owner closed the table; it settles when the current hand ends */
   closing: boolean;
+  /** users in the voice channel */
+  voice: string[];
   /** bomb pot: chips each player put in this hand (0 = normal hand) */
   bomb: number;
   /** the 2nd / 3rd board when the all-in was run more than once */
@@ -220,6 +222,9 @@ export type ClientMsg =
   | { t: 'show'; cards: number[] }
   | { t: 'chat'; text: string }
   | { t: 'runs'; n: number }
+  | { t: 'voice'; on: boolean }
+  /** WebRTC signaling for voice chat, relayed to `to` */
+  | { t: 'rtc'; to: string; data: unknown }
   | { t: 'act'; type: ActionType; to?: number };
 
 export type ServerMsg =
@@ -236,6 +241,9 @@ export type ServerMsg =
   | { t: 'emote'; from: number; to: number; emoji: string }
   /** `seat` = -1 when a spectator speaks */
   | { t: 'chat'; user: string; seat: number; text: string }
+  /** you joined voice: these users were already in it, call each of them */
+  | { t: 'voicePeers'; users: string[] }
+  | { t: 'rtc'; from: string; data: unknown }
   | { t: 'notice'; msg: string }
   | { t: 'error'; msg: string }
   | { t: 'kicked'; msg: string };

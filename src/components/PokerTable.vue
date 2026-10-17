@@ -92,6 +92,7 @@ const view = computed(() => {
       cards,
       avatar: p.avatar,
       name: p.name,
+      voice: !!p.user && !!remote.state?.voice.includes(p.user),
       dealer: g.dealer === p.id,
       style: p.isHuman ? '' : p.style.label,
       chips: p.waiting ? '下一手加入' : p.out ? '出局' : money(p.chips),
@@ -221,7 +222,7 @@ function sit(seat: number) {
           <div class="plate">
             <div class="avatar" title="发送表情" @click="toggleEmotePick(s.id)">{{ s.avatar }}<span v-if="s.dealer" class="dealer" title="庄家">D</span></div>
             <div class="info">
-              <div class="name"><span class="nm">{{ s.name }}</span><span v-if="s.style" class="style-tag">{{ s.style }}</span></div>
+              <div class="name"><span class="nm">{{ s.name }}</span><span v-if="s.voice" class="voice-tag" title="在语音中">🎙</span><span v-if="s.style" class="style-tag">{{ s.style }}</span></div>
               <div class="chips">{{ s.chips }}</div>
             </div>
             <i v-if="s.clock" class="clock" :class="{ low: clock < 0.3 }" :style="{ transform: `scaleX(${clock.toFixed(3)})` }"></i>

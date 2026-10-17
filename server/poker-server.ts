@@ -202,6 +202,8 @@ interface Hub {
 class Table {
   game = new Game();
   members = new Set<string>();
+  /** members in the voice channel (audio itself goes peer-to-peer over WebRTC; the server only relays signaling) */
+  private voice = new Set<string>();
   private offlineSince = new Map<string, number>();
   private turnTimer: ReturnType<typeof setTimeout> | null = null;
   private turnDeadline = 0;
@@ -285,6 +287,7 @@ class Table {
   leave(user: string) {
     this.stand(user);
     this.members.delete(user);
+    this.voice.delete(user);
     this.offlineSince.delete(user);
     this.requests = this.requests.filter((r) => r.user !== user);
     if (user === this.cfg.owner) {
@@ -417,6 +420,7 @@ class Table {
   }
   setOffline(user: string, off: boolean) {
     const i = this.seatOf(user);
+    if (off) this.voice.delete(user);
     if (off) this.offlineSince.set(user, Date.now());
     else this.offlineSince.delete(user);
     if (i < 0) return;
@@ -759,6 +763,7 @@ class Table {
       actions: this.log?.actions ?? [],
       requests: user === this.cfg.owner ? this.requests : this.requests.filter((r) => r.user === user),
       closing: this.closing,
+      voice: [...this.voice],
       bomb: g.bomb,
       extraBoards: g.extraBoards,
       runVote: this.runVote && {
@@ -792,6 +797,19 @@ class Table {
     this.lastChat.set(user, now);
     for (const u of this.members) this.hub.send(this.hub.clientOf(u), { t: 'chat', user, seat: this.seatOf(user), text: msg });
     return null;
+  }
+  /** join / leave the voice channel; a joiner gets the users already in it and calls each of them */
+  setVoice(user: string, on: boolean) {
+    if (on === this.voice.has(user)) return;
+    if (on) {
+      this.hub.send(this.hub.clientOf(user), { t: 'voicePeers', users: [...this.voice] });
+      this.voice.add(user);
+    } else this.voice.delete(user);
+    this.changed();
+  }
+  /** pass WebRTC signaling (offer / answer / ice) between two users in the voice channel */
+  rtc(user: string, to: string, data: unknown) {
+    if (this.voice.has(user) && this.voice.has(to)) this.hub.send(this.hub.clientOf(to), { t: 'rtc', from: user, data });
   }
   /** a seated player sends an emote to a seat (their own one included) */
   emote(user: string, to: number, emoji: string): string | null {
@@ -1009,6 +1027,8 @@ export function createPokerServer(opts: { dataDir: string }) {
     else if (m.t === 'chat') err = t.chat(user, String(m.text ?? ''));
     else if (m.t === 'show') t.show(user, Array.isArray(m.cards) ? m.cards : []);
     else if (m.t === 'emote') err = t.emote(user, Number(m.to) | 0, String(m.emoji ?? ''));
+    else if (m.t === 'voice') t.setVoice(user, !!m.on);
+    else if (m.t === 'rtc') t.rtc(user, String(m.to ?? ''), m.data);
     else if (m.t === 'runs') t.voteRuns(user, Number(m.n) | 0);
     else if (m.t === 'act' && ACTIONS.has(m.type)) t.act(user, m.type, Number.isFinite(m.to) ? Math.floor(m.to!) : undefined);
     if (err) hub.send(c, { t: 'error', msg: err });

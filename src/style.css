@@ -567,6 +567,10 @@ button {
   border: 1px solid var(--panel-line);
   color: var(--ink-dim);
 }
+.voice-tag {
+  font-size: 0.8em;
+  margin-left: 0.2em;
+}
 .chips {
   font-family: var(--font-display);
   color: var(--accent);
