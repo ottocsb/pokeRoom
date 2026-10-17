@@ -138,6 +138,7 @@ const pot = computed(() => {
   const g = game.value;
   return g.phase === 'handover' ? g.pots.reduce((s, p) => s + p.amount, 0) : g.potTotal();
 });
+const bombPot = computed(() => game.value.bomb > 0);
 const msg = computed(() => (game.value.phase === 'handover' ? summaryText() : ''));
 const clock = computed(() => clockFrac());
 const clockSecs = computed(() => Math.ceil(Math.max(0, remote.turnDeadline - ui.now) / 1000));
@@ -177,7 +178,7 @@ function sit(seat: number) {
       <div class="rail"></div>
       <div class="felt"><div class="emblem"></div></div>
       <div class="pot" id="pot" :class="{ clickable: ui.mode === 'online' }" title="查看本手行动路线" @click="toggleFlow">
-        <template v-if="pot > 0"><span>底池</span><b>{{ money(pot) }}</b></template>
+        <template v-if="pot > 0"><span>{{ bombPot ? '暴击底池' : '底池' }}</span><b>{{ money(pot) }}</b></template>
       </div>
       <div class="board" id="board" :class="{ multi: extra.length }" :style="{ '--runs': extra.length + 1 }">
         <div class="board-row">

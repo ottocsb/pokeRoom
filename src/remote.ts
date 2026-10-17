@@ -17,6 +17,7 @@ export type TableLike = Pick<
   | 'minRaise'
   | 'turn'
   | 'handNo'
+  | 'bomb'
   | 'summary'
   | 'pots'
   | 'sb'
@@ -200,6 +201,9 @@ export class RemoteTable implements TableLike {
   }
   get turn() {
     return this.state?.turn ?? -1;
+  }
+  get bomb() {
+    return this.state?.bomb ?? 0;
   }
   get handNo() {
     return this.state?.handNo ?? 0;

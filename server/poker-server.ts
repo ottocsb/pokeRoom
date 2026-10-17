@@ -9,6 +9,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { emptySeat, Game, newPlayer, PROFILES, type ActionType, type GameEvent, type Player } from '../src/game';
 import {
+  BOMB_CHANCE,
   CHAT_MAX,
   CODE_CHARS,
   EMOTES,
@@ -37,6 +38,8 @@ interface RoomCfg {
   buyIn: number;
   private?: boolean;
   owner?: string;
+  /** bomb pots: BB each player puts in (0 / missing = off) */
+  bomb?: number;
 }
 // No public rooms: every table is created by a player and reached by its invite code.
 const OFFLINE_KICK_MS = 60_000;
@@ -227,6 +230,12 @@ class Table {
   private lastEmote = new Map<string, number>();
   private lastChat = new Map<string, number>();
   /** all-in players choosing how many times to run the board */
+  /** bomb pots: orbits of the button since the first hand, counted each time it passes the first button seat */
+  private orbit = 0;
+  private orbitAnchor = -1;
+  private prevDealer = -1;
+  /** orbit of the last bomb pot (-1 = none yet, so the first one may come from orbit 1) */
+  private lastBomb = -1;
   private runVote: { seats: number[]; votes: Map<number, number>; deadline: number; timer: ReturnType<typeof setTimeout> } | null = null;
 
   constructor(
@@ -245,6 +254,7 @@ class Table {
     g.onUpdate = () => this.changed();
     g.onEvent = (e) => this.onEvent(e);
     g.onRunOut = () => this.askRuns();
+    g.bombAnte = () => this.bombAnte();
   }
 
   private get seated() {
@@ -463,6 +473,7 @@ class Table {
     this.clearRunVote();
     g.board = [];
     g.extraBoards = [];
+    g.bomb = 0;
     g.pots = [];
     g.summary = null;
     g.currentBet = 0;
@@ -526,6 +537,24 @@ class Table {
     this.runVote = { seats: live.map((p) => p.id), votes: new Map(), deadline: Date.now() + RUN_VOTE_MS, timer };
     return true;
   }
+  /** Bomb pot or not for the hand being dealt. Never in the first orbit; after one, not for the rest of that orbit nor the next. */
+  private bombAnte(): number {
+    const g = this.game;
+    const n = g.players.length;
+    const d = g.dealer;
+    if (this.orbitAnchor < 0) this.orbitAnchor = d;
+    else {
+      // did the button pass the anchor seat moving from prevDealer to d?
+      const toAnchor = (this.orbitAnchor - this.prevDealer + n) % n || n;
+      const toDealer = (d - this.prevDealer + n) % n || n;
+      if (toAnchor <= toDealer) this.orbit++;
+    }
+    this.prevDealer = d;
+    if (!this.cfg.bomb || this.orbit < this.lastBomb + 2 || g.rng.next() >= BOMB_CHANCE) return 0;
+    this.lastBomb = this.orbit;
+    for (const u of this.members) this.hub.send(this.hub.clientOf(u), { t: 'notice', msg: `暴击底池！每人 ${this.cfg.bomb}BB，直接发翻牌` });
+    return this.cfg.bomb * this.cfg.bb;
+  }
   voteRuns(user: string, n: number) {
     const v = this.runVote;
     const i = this.seatOf(user);
@@ -588,6 +617,7 @@ class Table {
     const bb = players.find((p) => p.lastLabel === '大盲');
     if (sb) this.addAction(sb, 'sb', sb.bet);
     if (bb) this.addAction(bb, 'bb', bb.bet);
+    for (const p of players) if (p.lastLabel === '暴击') this.addAction(p, 'ante', p.bet);
   }
   private logAction(seat: number, type: ActionType, amount: number) {
     const log = this.log;
@@ -709,6 +739,7 @@ class Table {
         buyIn: this.cfg.buyIn,
         private: !!this.cfg.private,
         owner: this.cfg.owner,
+        bomb: this.cfg.bomb ?? 0,
       },
       handNo: g.handNo,
       phase: g.phase,
@@ -728,6 +759,7 @@ class Table {
       actions: this.log?.actions ?? [],
       requests: user === this.cfg.owner ? this.requests : this.requests.filter((r) => r.user === user),
       closing: this.closing,
+      bomb: g.bomb,
       extraBoards: g.extraBoards,
       runVote: this.runVote && {
         seats: this.runVote.seats,
@@ -868,9 +900,9 @@ export function createPokerServer(opts: { dataDir: string }) {
     }
   }
   function createRoom(owner: string, raw: unknown): Table | string {
-    const { max, sb, bb, buyIn } = sanitizeCreate(raw as Record<string, never>);
+    const { max, sb, bb, buyIn, bomb } = sanitizeCreate(raw as Record<string, never>);
     if (tables.length >= MAX_PRIVATE_ROOMS) return '服务器房间已满，请稍后再试';
-    const t = new Table({ id: newCode(), name: `${owner} 的房间`, max, sb, bb, buyIn, private: true, owner }, hub, store);
+    const t = new Table({ id: newCode(), name: `${owner} 的房间`, max, sb, bb, buyIn, private: true, owner, bomb }, hub, store);
     tables.push(t);
     return t;
   }

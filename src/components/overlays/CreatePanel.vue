@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { CREATE_BLINDS, CREATE_DEPTHS } from '../../protocol';
+import { BOMB_CHANCE, CREATE_BLINDS, CREATE_BOMBS, CREATE_DEPTHS } from '../../protocol';
 import { sfx } from '../../sound';
 import { createRoom, RINGS, ui } from '../../store';
 
@@ -19,6 +19,10 @@ function setBlind(i: number) {
 }
 function setDepth(n: number) {
   d.buyIn = d.bb * n;
+  sfx.click();
+}
+function setBomb(n: number) {
+  d.bomb = n;
   sfx.click();
 }
 function back() {
@@ -46,6 +50,13 @@ function back() {
             {{ (n * d.bb).toLocaleString('en-US') }}<small> · {{ n }}BB</small>
           </button>
         </div>
+        <label>暴击底池（每人投入）</label>
+        <div class="segs">
+          <button v-for="n in CREATE_BOMBS" :key="n" class="seg" :class="{ sel: n === d.bomb }" @click="setBomb(n)">{{ n ? `${n}BB` : '关闭' }}</button>
+        </div>
+        <p v-if="d.bomb" class="lobby-note">
+          第一轮之后每手有 {{ BOMB_CHANCE * 100 }}% 概率触发：不收盲注，每人投入 <b>{{ d.bomb * d.bb }}</b>（不足则全下），直接发翻牌。触发后本轮剩余和下一整轮不再触发。
+        </p>
         <p class="lobby-note">
           小盲 <b>{{ d.sb }}</b> · 大盲 <b>{{ d.bb }}</b> · 每人带入 <b>{{ d.buyIn.toLocaleString('en-US') }}</b>，其他玩家入座需你同意。房间只能通过邀请链接或邀请码进入；无人 30 分钟后自动解散。
         </p>

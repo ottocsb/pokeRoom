@@ -45,7 +45,8 @@ const meta = computed(() => {
   const st = online.value ? remote.state : null;
   const roomName = st ? `${st.room.name}${st.room.private ? ` (${st.room.id})` : ''} · ` : '';
   const watchers = st?.watchers.length ? ` · 旁观 ${st.watchers.length}` : '';
-  return `${roomName}${g.room.max === 9 ? '9人桌' : '6人桌'} · 盲注 ${g.sb}/${g.bb}${g.handNo ? ` · 第 ${g.handNo} 手` : ''}${watchers}`;
+  const bomb = st?.room.bomb ? ` · 暴击 ${st.room.bomb}BB` : '';
+  return `${roomName}${g.room.max === 9 ? '9人桌' : '6人桌'} · 盲注 ${g.sb}/${g.bb}${bomb}${g.handNo ? ` · 第 ${g.handNo} 手` : ''}${watchers}`;
 });
 /** action line of the current hand, opened by clicking the pot */
 const flow = computed(() => {

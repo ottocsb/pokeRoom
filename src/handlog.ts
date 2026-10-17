@@ -14,6 +14,7 @@ export function actText(a: HandAction) {
   const t = {
     sb: `小盲 ${money(a.amount)}`,
     bb: `大盲 ${money(a.amount)}`,
+    ante: `暴击 ${money(a.amount)}`,
     fold: '弃牌',
     check: '过牌',
     call: `跟注 ${money(a.amount)}`,

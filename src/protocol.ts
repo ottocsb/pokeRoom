@@ -24,6 +24,8 @@ export interface RoomInfo {
   /** private room created by a player; joined via invite code, not listed in the lobby */
   private?: boolean;
   owner?: string;
+  /** bomb pots on: BB each player puts in (0 / missing = off) */
+  bomb?: number;
 }
 
 /** Settings a player picks when opening a private room */
@@ -32,6 +34,8 @@ export interface CreateRoomCfg {
   sb: number;
   bb: number;
   buyIn: number;
+  /** bomb pot: BB each player puts in, 0 = off */
+  bomb: number;
 }
 export const CREATE_BLINDS: Array<[number, number]> = [
   [1, 2],
@@ -43,13 +47,18 @@ export const CREATE_BLINDS: Array<[number, number]> = [
 ];
 /** buy-in depth options, in big blinds (buyIn = bb × depth) */
 export const CREATE_DEPTHS = [50, 100, 200];
+/** bomb pot options, in BB per player (0 = off) */
+export const CREATE_BOMBS = [0, 1, 2, 3, 5];
+/** once allowed (from the 2nd orbit, then every other orbit after one), the chance each hand is a bomb pot */
+export const BOMB_CHANCE = 0.2;
 /** Clamp any (possibly stale) create settings to a valid combination. */
 export function sanitizeCreate(raw: Partial<CreateRoomCfg> | null | undefined): CreateRoomCfg {
   const c = raw ?? {};
   const max = c.max === 9 ? 9 : 6;
   const [sb, bb] = CREATE_BLINDS.find(([s, b]) => s === c.sb && b === c.bb) ?? CREATE_BLINDS[2];
   const depth = CREATE_DEPTHS.find((d) => d * bb === Number(c.buyIn)) ?? 100;
-  return { max, sb, bb, buyIn: bb * depth };
+  const bomb = CREATE_BOMBS.find((b) => b === Number(c.bomb)) ?? 0;
+  return { max, sb, bb, buyIn: bb * depth, bomb };
 }
 /** Invite codes: 6 chars, no look-alikes (0/O, 1/I/L) */
 export const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -112,6 +121,8 @@ export interface TableState {
   requests: Array<{ user: string; seat: number }>;
   /** owner closed the table; it settles when the current hand ends */
   closing: boolean;
+  /** bomb pot: chips each player put in this hand (0 = normal hand) */
+  bomb: number;
   /** the 2nd / 3rd board when the all-in was run more than once */
   extraBoards: Card[][];
   /** all-in players choosing how many times to deal the rest (the smallest pick wins) */
@@ -142,7 +153,7 @@ export interface SessionRec {
 export interface HandAction {
   street: 'preflop' | 'flop' | 'turn' | 'river';
   seat: number;
-  act: 'sb' | 'bb' | 'fold' | 'check' | 'call' | 'bet' | 'raise';
+  act: 'sb' | 'bb' | 'ante' | 'fold' | 'check' | 'call' | 'bet' | 'raise';
   amount: number;
   to: number;
   allIn: boolean;

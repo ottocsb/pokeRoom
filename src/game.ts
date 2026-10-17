@@ -137,6 +137,8 @@ export class Game {
   minRaise = 20;
   turn = -1;
   handNo = 0;
+  /** bomb pot: chips each player put in this hand (0 = normal hand) */
+  bomb = 0;
   summary: HandSummary | null = null;
   pots: PotResult[] = [];
   rng = new RNG();
@@ -148,6 +150,8 @@ export class Game {
   onEvent: (e: GameEvent) => void = () => {};
   /** all-in before the river: return true to pause until runOut(n) says how many times to deal the rest */
   onRunOut: () => boolean = () => false;
+  /** called once the button has moved: chips each player puts in for a bomb pot this hand, 0 = normal hand */
+  bombAnte: () => number = () => 0;
 
   private timers: ReturnType<typeof setTimeout>[] = [];
   /** this hand's all-in run-out was already offered */
@@ -288,9 +292,15 @@ export class Game {
     this.phase = 'betting';
     this.currentBet = 0;
     this.minRaise = this.bb;
-    this.post(this.players[sbPos], this.sb, '小盲');
-    this.post(this.players[bbPos], this.bb, '大盲');
-    this.currentBet = this.bb;
+    this.bomb = this.bombAnte();
+    if (this.bomb) {
+      // bomb pot: everyone puts in the same amount (short stacks go all-in), no blinds, no preflop betting
+      for (const p of this.players) if (!p.out) this.post(p, this.bomb, '暴击');
+    } else {
+      this.post(this.players[sbPos], this.sb, '小盲');
+      this.post(this.players[bbPos], this.bb, '大盲');
+      this.currentBet = this.bb;
+    }
 
     for (let round = 0; round < 2; round++) {
       let i = sbPos;
@@ -300,10 +310,11 @@ export class Game {
         i = (i + 1) % this.players.length;
       }
     }
-    this.turn = this.nextIndex(bbPos, (p) => this.canAct(p));
+    this.turn = this.bomb ? -1 : this.nextIndex(bbPos, (p) => this.canAct(p));
     this.onEvent({ type: 'deal' });
     this.onUpdate();
-    this.schedule(() => this.proceed(), 600);
+    // a bomb pot goes straight to the flop
+    this.schedule(() => (this.bomb ? this.endStreet() : this.proceed()), this.bomb ? 1200 : 600);
   }
 
   private post(p: Player, amount: number, label: string) {
