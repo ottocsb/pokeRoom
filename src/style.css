@@ -2167,3 +2167,188 @@ button.home-card:active:not(:disabled) {
     padding-top: 8px;
   }
 }
+
+/* ================= HAND HISTORY ================= */
+.ov-panel.history {
+  width: 560px;
+  max-width: 94vw;
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  padding: 22px 22px 18px;
+}
+.hist-standings {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0 12px;
+  font-size: 14px;
+}
+.hist-standings th,
+.hist-standings td {
+  padding: 5px 8px;
+  text-align: right;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.hist-standings th:first-child,
+.hist-standings td:first-child {
+  text-align: left;
+}
+.hist-standings th {
+  color: var(--ink-dim);
+  font-weight: normal;
+  font-size: 12px;
+}
+.ov-panel.history .me {
+  color: var(--accent);
+}
+.ov-panel.history .up {
+  color: #4cd47a;
+}
+.ov-panel.history .down {
+  color: #ff6b6b;
+}
+.ov-panel.history .dim {
+  color: var(--ink-dim);
+  font-style: normal;
+}
+.hist-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  text-align: left;
+  font-size: 13px;
+}
+.hist-hand {
+  padding: 8px 4px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.hist-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.hist-head small {
+  margin-left: auto;
+  color: var(--ink-dim);
+}
+.hist-row {
+  display: grid;
+  grid-template-columns: 6em 5.5em 1fr auto;
+  gap: 8px;
+  padding: 2px 0;
+}
+.hist-row .nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hist-row.folded .nm,
+.hist-row .desc {
+  color: var(--ink-dim);
+}
+.hist-row .net {
+  font-family: var(--font-num);
+  text-align: right;
+}
+.hcard {
+  display: inline-block;
+  font-style: normal;
+  font-family: var(--font-num);
+  padding: 0 3px;
+  margin-right: 2px;
+  border-radius: 3px;
+  background: #f4f1ea;
+  color: #1a1a1a;
+}
+.hcard.red {
+  color: #c62828;
+}
+.ov-panel.history .lobby-actions {
+  margin-top: 12px;
+}
+.hist-head {
+  cursor: pointer;
+}
+.hist-head:hover b {
+  color: var(--accent);
+}
+.hist-flow {
+  margin: 6px 0 2px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.hist-street + .hist-street {
+  margin-top: 6px;
+}
+.hist-street .st {
+  color: var(--accent);
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+.hist-act {
+  padding-left: 1em;
+}
+.hist-act .nm {
+  display: inline-block;
+  min-width: 6em;
+}
+.hist-act.fold {
+  color: var(--ink-dim);
+}
+
+/* ================= LIVE ACTION LINE (click the pot) ================= */
+.pot.clickable {
+  cursor: pointer;
+}
+.pot.clickable:hover {
+  background: rgba(0, 0, 0, 0.55);
+}
+.flow-pop {
+  position: absolute;
+  right: 10px;
+  top: 6px;
+  z-index: 20;
+  width: 250px;
+  max-height: calc(100% - 12px);
+  overflow-y: auto;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  font-size: 12px;
+}
+.flow-pop h3 {
+  display: flex;
+  align-items: center;
+  margin: 0 0 6px;
+  font-size: 13px;
+}
+.flow-pop h3 .x {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+.flow-pop .dim {
+  color: var(--ink-dim);
+  margin: 0;
+}
+
+/* ================= SETTLEMENT ================= */
+.settle-mine {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 4px 0 8px;
+}
+.settle-mine b {
+  font-size: 30px;
+}
+.settle-mine small {
+  color: var(--ink-dim);
+}

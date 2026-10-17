@@ -14,9 +14,12 @@ import {
   sanitizeCreate,
   TURN_MS,
   type ClientMsg,
+  type HandAction,
+  type HandLog,
   type RoomInfo,
   type SeatView,
   type ServerMsg,
+  type SettleRow,
   type TableState,
 } from '../src/protocol';
 
@@ -63,6 +66,12 @@ class Store {
       CREATE TABLE IF NOT EXISTS tokens (
         token    TEXT PRIMARY KEY,
         user_key TEXT NOT NULL REFERENCES users(key) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS hands (
+        room    TEXT NOT NULL,
+        hand_no INTEGER NOT NULL,
+        data    TEXT NOT NULL,
+        PRIMARY KEY (room, hand_no)
       );
     `);
     this.migrateJson(path.join(dir, 'users.json'));
@@ -131,6 +140,14 @@ class Store {
   revoke(token: string) {
     this.db.prepare('DELETE FROM tokens WHERE token = ?').run(token);
   }
+  /** hand history, keyed by Table.logKey (invite codes can be reused after a room dissolves) */
+  addHand(room: string, h: HandLog) {
+    this.db.prepare('INSERT OR REPLACE INTO hands (room, hand_no, data) VALUES (?, ?, ?)').run(room, h.handNo, JSON.stringify(h));
+  }
+  hands(room: string): HandLog[] {
+    const rows = this.db.prepare('SELECT data FROM hands WHERE room = ? ORDER BY hand_no').all(room) as { data: string }[];
+    return rows.map((r) => JSON.parse(r.data));
+  }
 }
 
 // ---------------------------------------------------------------- tables
@@ -146,6 +163,7 @@ interface Hub {
   clientOf(user: string): Client | undefined;
   send(c: Client | undefined, m: ServerMsg): void;
   roomsChanged(): void;
+  dissolve(t: Table): void;
 }
 
 class Table {
@@ -159,11 +177,23 @@ class Table {
   private pending = false;
   /** when the room last became empty (0 = someone is here) */
   emptySince = 0;
+  /** key of this room's hand history in the db */
+  logKey: string;
+  /** the hand being played, saved when it ends */
+  private log: HandLog | null = null;
+  /** buy-ins per player (key = user, or `bot:name`); `stack` = chips kept while not seated */
+  private ledger = new Map<string, { name: string; user?: string; buyIn: number; stack: number }>();
+  /** players waiting for the owner to approve their buy-in */
+  private requests: Array<{ user: string; seat: number }> = [];
+  /** owner closed the table: settle when the current hand ends */
+  private closing = false;
 
   constructor(
     public cfg: RoomCfg,
     private hub: Hub,
+    private store: Store,
   ) {
+    this.logKey = `${cfg.id}-${Date.now()}`;
     const g = this.game;
     g.solo = false;
     g.aiDelay = 900;
@@ -202,26 +232,91 @@ class Table {
     this.stand(user);
     this.members.delete(user);
     this.offlineSince.delete(user);
+    this.requests = this.requests.filter((r) => r.user !== user);
+    if (user === this.cfg.owner) {
+      // nobody left to answer: drop pending requests so the table doesn't stall
+      for (const r of this.requests) this.hub.send(this.hub.clientOf(r.user), { t: 'notice', msg: '房主已离开房间，带入申请已取消' });
+      this.requests = [];
+    }
     if (!this.members.size) this.emptySince = Date.now();
     this.changed();
   }
   sit(user: string, seat: number): string | null {
     const g = this.game;
+    if (this.closing) return '牌桌即将关闭';
     if (this.seatOf(user) >= 0) return '你已经在座位上了';
     const cur = g.players[seat];
     if (!cur || !cur.empty) return '这个座位已经有人了';
-    const p = newPlayer(seat, user, avatarOf(user), true, { tight: 0.5, aggr: 0.5, label: '' }, this.cfg.buyIn);
+    // the owner and players with chips left from before sit straight down; everyone else asks the owner
+    if (user !== this.cfg.owner && !this.ledger.get(user)?.stack) {
+      if (!this.members.has(this.cfg.owner ?? '')) return '房主不在房间，暂时无法申请带入';
+      this.requests = this.requests.filter((r) => r.user !== user);
+      this.requests.push({ user, seat });
+      this.hub.send(this.hub.clientOf(this.cfg.owner ?? ''), { t: 'notice', msg: `${user} 申请带入 ${this.cfg.buyIn}` });
+      this.changed();
+      return null;
+    }
+    this.seatUser(user, seat);
+    return null;
+  }
+  /** owner answers a buy-in request */
+  approve(by: string, user: string, ok: boolean): string | null {
+    if (by !== this.cfg.owner) return '只有房主可以审批带入';
+    const req = this.requests.find((r) => r.user === user);
+    if (!req) return null;
+    this.requests = this.requests.filter((r) => r !== req);
+    const c = this.hub.clientOf(user);
+    if (!ok || this.closing || !this.members.has(user) || this.seatOf(user) >= 0) {
+      if (!ok) this.hub.send(c, { t: 'notice', msg: '房主拒绝了你的带入申请' });
+      this.changed();
+      return null;
+    }
+    const g = this.game;
+    const seat = g.players[req.seat]?.empty ? req.seat : g.players.findIndex((p) => p.empty);
+    if (seat < 0) {
+      this.changed();
+      return '座位已满';
+    }
+    this.seatUser(user, seat);
+    this.hub.send(c, { t: 'notice', msg: `房主已同意带入 ${this.cfg.buyIn}` });
+    return null;
+  }
+  private seatUser(user: string, seat: number) {
+    const p = newPlayer(seat, user, avatarOf(user), true, { tight: 0.5, aggr: 0.5, label: '' }, this.takeChips(user, user, user));
     p.user = user;
     this.placeNew(p);
-    return null;
+  }
+  /** chips for someone sitting down: what they left with, or a fresh buy-in */
+  private takeChips(key: string, name: string, user?: string) {
+    const e = this.ledger.get(key) ?? { name, user, buyIn: 0, stack: 0 };
+    this.ledger.set(key, e);
+    if (e.stack > 0) {
+      const n = e.stack;
+      e.stack = 0;
+      return n;
+    }
+    e.buyIn += this.cfg.buyIn;
+    return this.cfg.buyIn;
+  }
+  private keyOf(p: Player) {
+    return p.user ?? `bot:${p.name}`;
+  }
+  /** empty seat i, keeping the player's chips in the ledger */
+  private clearSeat(i: number) {
+    const p = this.game.players[i];
+    if (p.empty) return;
+    const e = this.ledger.get(this.keyOf(p));
+    if (e) e.stack += p.chips;
+    this.game.players[i] = emptySeat(i);
   }
   addBot(): string | null {
     const g = this.game;
+    if (this.closing) return '牌桌即将关闭';
     const seat = g.players.findIndex((p) => p.empty);
     if (seat < 0) return '座位已满';
     const used = new Set(this.seated.map((p) => p.name));
     const prof = PROFILES.slice(1).find((p) => !used.has(p.name)) ?? PROFILES[1 + (seat % (PROFILES.length - 1))];
-    this.placeNew(newPlayer(seat, prof.name, prof.avatar, false, prof.style, this.cfg.buyIn));
+    this.placeNew(newPlayer(seat, prof.name, prof.avatar, false, prof.style, this.takeChips(`bot:${prof.name}`, prof.name)));
     return null;
   }
   private placeNew(p: Player) {
@@ -254,7 +349,7 @@ class Table {
       p.leaving = true;
       if (g.turn === i) this.armTurn(i);
     } else {
-      g.players[i] = emptySeat(i);
+      this.clearSeat(i);
       this.tidy();
     }
     this.changed();
@@ -263,7 +358,7 @@ class Table {
   private tidy() {
     const g = this.game;
     if (g.phase === 'betting') return;
-    if (!this.seated.some((p) => p.user)) g.players.forEach((p, i) => !p.empty && (g.players[i] = emptySeat(i)));
+    if (!this.seated.some((p) => p.user)) g.players.forEach((p, i) => this.clearSeat(i));
     if (this.seated.length < 2 && g.phase !== 'handover') this.toIdle();
   }
   setOffline(user: string, off: boolean) {
@@ -285,18 +380,23 @@ class Table {
   }
   private nextHand() {
     this.nextTimer = null;
+    if (this.requests.length) {
+      // the owner has to answer buy-in requests before the next deal
+      this.nextTimer = setTimeout(() => this.nextHand(), 1000);
+      return;
+    }
     const g = this.game;
     const now = Date.now();
     g.players.forEach((p, i) => {
       if (p.empty) return;
       const offFor = p.user && this.offlineSince.has(p.user) ? now - this.offlineSince.get(p.user)! : 0;
       if (p.leaving || offFor > OFFLINE_KICK_MS) {
-        g.players[i] = emptySeat(i);
+        this.clearSeat(i);
       } else if (p.user && p.chips <= 0) {
-        g.players[i] = emptySeat(i);
-        this.hub.send(this.hub.clientOf(p.user), { t: 'notice', msg: '筹码输光了，已自动起身。可重新入座再次买入。' });
+        this.clearSeat(i);
+        this.hub.send(this.hub.clientOf(p.user), { t: 'notice', msg: '筹码输光了，已自动起身。可重新入座申请带入。' });
       } else if (!p.user && p.chips <= 0) {
-        p.chips = this.cfg.buyIn; // bots rebuy
+        p.chips = this.takeChips(this.keyOf(p), p.name); // bots rebuy
         p.out = false;
       }
       const q = g.players[i];
@@ -320,6 +420,7 @@ class Table {
     g.pots = [];
     g.summary = null;
     g.currentBet = 0;
+    this.log = null;
     for (const p of g.players) {
       if (p.empty) continue;
       Object.assign(p, { hole: [], bet: 0, total: 0, folded: false, allIn: false, out: false, waiting: false, acted: false });
@@ -330,14 +431,18 @@ class Table {
 
   private onEvent(e: GameEvent) {
     for (const u of this.members) this.hub.send(this.hub.clientOf(u), { t: 'ev', e });
-    if (e.type === 'turn') {
+    if (e.type === 'deal') this.logDeal();
+    else if (e.type === 'turn') {
       const p = this.game.players[e.player];
       if (p.isHuman) this.armTurn(e.player);
-    } else if (e.type === 'action') this.clearTurn();
-    else if (e.type === 'win') {
+    } else if (e.type === 'action') {
+      this.logAction(e.player, e.action, e.amount);
+      this.clearTurn();
+    } else if (e.type === 'win') {
+      this.logHand();
       this.clearTurn();
       if (this.nextTimer) clearTimeout(this.nextTimer);
-      this.nextTimer = setTimeout(() => this.nextHand(), NEXT_HAND_MS);
+      this.nextTimer = setTimeout(() => (this.closing ? this.settle() : this.nextHand()), NEXT_HAND_MS);
     }
   }
   private clearTurn() {
@@ -364,6 +469,106 @@ class Table {
     const i = this.seatOf(user);
     if (i < 0) return;
     this.game.act(i, { type, to });
+  }
+
+  // ----- hand history (enough detail to write GGPoker-style hand histories later)
+  private logDeal() {
+    const g = this.game;
+    // blinds are already posted at this point
+    const players = g.players.filter((p) => !p.out);
+    this.log = {
+      handNo: g.handNo,
+      time: Date.now(),
+      room: this.cfg.id,
+      max: this.cfg.max,
+      sb: this.cfg.sb,
+      bb: this.cfg.bb,
+      button: g.dealer,
+      board: [],
+      summary: null,
+      actions: [],
+      players: players.map((p) => ({
+        seat: p.id,
+        name: p.name,
+        user: p.user,
+        stack: p.chips + p.total,
+        hole: [],
+        shown: false,
+        folded: false,
+        desc: '',
+        net: 0,
+        collected: 0,
+        uncalled: 0,
+      })),
+    };
+    const sb = players.find((p) => p.lastLabel === '小盲');
+    const bb = players.find((p) => p.lastLabel === '大盲');
+    if (sb) this.addAction(sb, 'sb', sb.bet);
+    if (bb) this.addAction(bb, 'bb', bb.bet);
+  }
+  private logAction(seat: number, type: ActionType, amount: number) {
+    const log = this.log;
+    const p = this.game.players[seat];
+    if (!log) return;
+    // highest bet on this street before this action
+    const street = this.game.street;
+    const cur = Math.max(0, ...log.actions.filter((a) => a.street === street).map((a) => a.to));
+    let act: HandAction['act'] = type === 'allin' ? 'raise' : type;
+    if (act === 'raise') act = p.bet <= cur ? 'call' : cur === 0 ? 'bet' : 'raise';
+    this.addAction(p, act, amount);
+  }
+  private addAction(p: Player, act: HandAction['act'], amount: number) {
+    const street = this.game.street as HandAction['street'];
+    this.log?.actions.push({ street, seat: p.id, act, amount, to: p.bet, allIn: p.allIn });
+  }
+  private logHand() {
+    const g = this.game;
+    // kept after the hand so the table can still show its action line
+    const log = this.log;
+    if (!log || log.handNo !== g.handNo) return;
+    // the top contributor's chips nobody matched go back as an uncalled bet
+    const totals = log.players.map((lp) => g.players[lp.seat].total).sort((a, b) => b - a);
+    const uncalled = totals[0] - (totals[1] ?? 0);
+    let refunded = false;
+    for (const lp of log.players) {
+      const p = g.players[lp.seat];
+      lp.hole = p.hole;
+      lp.shown = p.revealed && !p.folded;
+      lp.folded = p.folded;
+      lp.desc = p.result && !p.folded ? p.result.desc : '';
+      lp.net = p.chips - lp.stack;
+      if (!refunded && uncalled > 0 && p.total === totals[0]) {
+        lp.uncalled = uncalled;
+        refunded = true;
+      }
+      lp.collected = lp.net + p.total - lp.uncalled;
+    }
+    log.board = g.board;
+    log.summary = g.summary;
+    try {
+      this.store.addHand(this.logKey, log);
+    } catch (err) {
+      console.warn('[poker] could not save hand', err);
+    }
+  }
+  /** Hand history as `user` may see it: other players' cards only when shown down. */
+  history(user: string) {
+    const hands = this.store.hands(this.logKey);
+    const tally = new Map<string, { name: string; net: number; hands: number }>();
+    for (const h of hands)
+      for (const p of h.players) {
+        const k = p.user ?? `bot:${p.name}`;
+        const t = tally.get(k) ?? { name: p.name, net: 0, hands: 0 };
+        t.net += p.net;
+        t.hands++;
+        tally.set(k, t);
+      }
+    const standings = [...tally.values()].sort((a, b) => b.net - a.net);
+    const view = hands
+      .slice(-50)
+      .reverse()
+      .map((h) => ({ ...h, players: h.players.map((p) => (p.user === user || p.shown ? p : { ...p, hole: [] })) }));
+    return { hands: view, standings };
   }
 
   // ----- sync
@@ -435,7 +640,35 @@ class Table {
       turnLeft: this.turnTimer ? Math.max(0, this.turnDeadline - Date.now()) : 0,
       turnTotal: this.turnTotal,
       watchers: [...this.members].filter((u) => this.seatOf(u) < 0),
+      actions: this.log?.actions ?? [],
+      requests: user === this.cfg.owner ? this.requests : this.requests.filter((r) => r.user === user),
+      closing: this.closing,
     };
+  }
+  /** owner closes the table: right away, or once the hand in play is over */
+  closeTable(by: string): string | null {
+    if (by !== this.cfg.owner) return '只有房主可以关闭牌桌';
+    if (this.closing) return null;
+    this.closing = true;
+    this.requests = [];
+    if (this.game.phase === 'betting') {
+      for (const u of this.members) this.hub.send(this.hub.clientOf(u), { t: 'notice', msg: '房主已关闭牌桌，本手结束后结算' });
+      this.changed();
+    } else this.settle();
+    return null;
+  }
+  /** final standings to everyone in the room, then dissolve it */
+  private settle() {
+    const chips = new Map<string, number>();
+    for (const p of this.seated) chips.set(this.keyOf(p), p.chips);
+    const rows: SettleRow[] = [...this.ledger.entries()]
+      .map(([k, e]) => {
+        const c = e.stack + (chips.get(k) ?? 0);
+        return { name: e.name, user: e.user, buyIn: e.buyIn, chips: c, net: c - e.buyIn };
+      })
+      .sort((a, b) => b.net - a.net);
+    for (const u of this.members) this.hub.send(this.hub.clientOf(u), { t: 'closed', name: this.cfg.name, rows });
+    this.hub.dissolve(this);
   }
   close() {
     this.game.clearTimers();
@@ -471,6 +704,12 @@ export function createPokerServer(opts: { dataDir: string }) {
         for (const c of clients.values()) hub.send(c, m);
       }, 50);
     },
+    dissolve(t) {
+      t.close();
+      const i = tables.indexOf(t);
+      if (i >= 0) tables.splice(i, 1);
+      for (const c of clients.values()) if (c.room === t) c.room = null;
+    },
   };
   const tables: Table[] = [];
   /** there is no public room list any more */
@@ -489,7 +728,7 @@ export function createPokerServer(opts: { dataDir: string }) {
   function createRoom(owner: string, raw: unknown): Table | string {
     const { max, sb, bb, buyIn } = sanitizeCreate(raw as Record<string, never>);
     if (tables.length >= MAX_PRIVATE_ROOMS) return '服务器房间已满，请稍后再试';
-    const t = new Table({ id: newCode(), name: `${owner} 的房间`, max, sb, bb, buyIn, private: true, owner }, hub);
+    const t = new Table({ id: newCode(), name: `${owner} 的房间`, max, sb, bb, buyIn, private: true, owner }, hub, store);
     tables.push(t);
     return t;
   }
@@ -587,6 +826,9 @@ export function createPokerServer(opts: { dataDir: string }) {
     else if (m.t === 'stand') t.stand(user);
     else if (m.t === 'addBot') err = t.addBot();
     else if (m.t === 'removeBots') t.removeBots();
+    else if (m.t === 'history') hub.send(c, { t: 'history', ...t.history(user) });
+    else if (m.t === 'approve') err = t.approve(user, String(m.user ?? ''), !!m.ok);
+    else if (m.t === 'closeTable') err = t.closeTable(user);
     else if (m.t === 'act' && ACTIONS.has(m.type)) t.act(user, m.type, Number.isFinite(m.to) ? Math.floor(m.to!) : undefined);
     if (err) hub.send(c, { t: 'error', msg: err });
   }

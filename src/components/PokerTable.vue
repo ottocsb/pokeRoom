@@ -128,6 +128,12 @@ const msg = computed(() => (game.value.phase === 'handover' ? summaryText() : ''
 const clock = computed(() => clockFrac());
 const handNo = computed(() => game.value.handNo);
 
+function toggleFlow() {
+  if (ui.mode !== 'online') return;
+  sfx.click();
+  ui.flowOpen = !ui.flowOpen;
+}
+
 function sit(seat: number) {
   if (ui.mode !== 'online') return;
   sfx.click();
@@ -140,7 +146,7 @@ function sit(seat: number) {
     <div class="table" id="table" :class="{ portrait, nine }" :style="tableStyle">
       <div class="rail"></div>
       <div class="felt"><div class="emblem"></div></div>
-      <div class="pot" id="pot">
+      <div class="pot" id="pot" :class="{ clickable: ui.mode === 'online' }" title="查看本手行动路线" @click="toggleFlow">
         <template v-if="pot > 0"><span>底池</span><b>{{ money(pot) }}</b></template>
       </div>
       <div class="board" id="board">

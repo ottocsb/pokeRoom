@@ -5,12 +5,14 @@ import { sfx } from './sound';
 import { THEMES } from './themes';
 import {
   can,
+  closeTable,
   doAct,
   game,
   heroCat,
   leaveRoom,
   local,
   net,
+  openHistory,
   openRaise,
   pickTheme,
   remote,
@@ -22,12 +24,16 @@ import {
 } from './store';
 import PokerTable from './components/PokerTable.vue';
 import HeroPanel from './components/HeroPanel.vue';
+import HandFlow from './components/HandFlow.vue';
 import LoginPanel from './components/overlays/LoginPanel.vue';
 import HomePanel from './components/overlays/HomePanel.vue';
 import CreatePanel from './components/overlays/CreatePanel.vue';
 import SharePanel from './components/overlays/SharePanel.vue';
+import HistoryPanel from './components/overlays/HistoryPanel.vue';
 import SoloSetupPanel from './components/overlays/SoloSetupPanel.vue';
 import GameOverPanel from './components/overlays/GameOverPanel.vue';
+import SettlePanel from './components/overlays/SettlePanel.vue';
+import BuyInPanel from './components/overlays/BuyInPanel.vue';
 
 const online = computed(() => ui.mode === 'online');
 const inRoom = computed(() => (game.value, online.value && !!remote.state));
@@ -39,7 +45,16 @@ const meta = computed(() => {
   const watchers = st?.watchers.length ? ` · 旁观 ${st.watchers.length}` : '';
   return `${roomName}${g.room.max === 9 ? '9人桌' : '6人桌'} · 盲注 ${g.sb}/${g.bb}${g.handNo ? ` · 第 ${g.handNo} 手` : ''}${watchers}`;
 });
+/** action line of the current hand, opened by clicking the pot */
+const flow = computed(() => {
+  const g = game.value;
+  if (!ui.flowOpen || !online.value || !remote.state) return null;
+  return { handNo: g.handNo, actions: remote.state.actions, board: g.board, nameOf: (seat: number) => g.players[seat]?.name || `${seat + 1}号` };
+});
 const seated = computed(() => inRoom.value && remote.mySeat >= 0);
+const isOwner = computed(() => inRoom.value && remote.state!.room.owner === ui.user);
+/** buy-in requests the owner has to answer */
+const requests = computed(() => (game.value, isOwner.value ? remote.state!.requests : []));
 const hasEmpty = computed(() => game.value.players.some((p) => p.empty));
 const hasBots = computed(() => game.value.players.some((p) => !p.empty && p.style.label.startsWith('电脑') && !p.leaving));
 const appClass = computed(() => {
@@ -47,6 +62,8 @@ const appClass = computed(() => {
   return { 'my-turn': can.value.my, spectate: !h && online.value };
 });
 const banner = computed(() => {
+  game.value;
+  if (inRoom.value && remote.state!.closing && ui.netStatus === 'open') return '房主已关闭牌桌，本手结束后结算';
   if (!online.value || ui.netStatus === 'open') return '';
   return ui.netStatus === 'connecting' ? '连接中断，正在重连…' : '连接已断开，稍后自动重连…';
 });
@@ -54,16 +71,22 @@ const banner = computed(() => {
 /** which overlay panel is showing ('' = none) */
 const overlay = computed(() => {
   game.value; // re-check engine phases on every update
+  if (ui.settle) return 'settle';
   if (ui.screen === 'login') return 'login';
   if (ui.screen === 'rooms') return 'rooms';
   if (ui.screen === 'solo-setup') return 'solo-setup';
   if (ui.screen === 'create') return 'create';
+  // owner must answer buy-in requests before doing anything else (cannot be dismissed)
+  if (ui.screen === 'table' && requests.value.length) return 'buyin';
   if (ui.screen === 'table' && ui.shareOpen && online.value && remote.state) return 'share';
+  if (ui.screen === 'table' && ui.historyOpen && online.value && remote.state) return 'history';
   if (!online.value && (local.phase === 'gameover' || local.phase === 'victory')) return 'over';
   return '';
 });
 function onOverlayClick(e: MouseEvent) {
-  if (overlay.value === 'share' && e.target === e.currentTarget) ui.shareOpen = false;
+  if (e.target !== e.currentTarget) return;
+  if (overlay.value === 'share') ui.shareOpen = false;
+  if (overlay.value === 'history') ui.historyOpen = false;
 }
 
 // ---------- top bar ----------
@@ -89,6 +112,10 @@ function onShare() {
   sfx.click();
   ui.shareOpen = true;
 }
+function onHistory() {
+  sfx.click();
+  openHistory();
+}
 function onLadder() {
   sfx.click();
   ui.ladderOpen = !ui.ladderOpen;
@@ -111,8 +138,11 @@ function onKey(e: KeyboardEvent) {
     openRaise(false);
     ui.ladderOpen = false;
     ui.shareOpen = false;
+    ui.historyOpen = false;
+    ui.flowOpen = false;
     return;
   }
+  if (overlay.value === 'buyin') return;
   if (ui.screen !== 'table') {
     if (ui.screen === 'solo-setup' && k === 'enter') startRoom({ ...ui.draft });
     return;
@@ -152,6 +182,9 @@ onBeforeUnmount(() => {
         <button class="tbtn invite" id="btn-share" title="邀请好友：复制带邀请码的房间链接" :hidden="!inRoom" @click="onShare">
           <span class="ico">✉</span><span class="lbl">邀请</span>
         </button>
+        <button class="tbtn" id="btn-history" title="查看本房间每手牌和玩家输赢" :hidden="!inRoom" @click="onHistory">
+          <span class="ico">☰</span><span class="lbl">战绩</span>
+        </button>
         <button class="tbtn" id="btn-stand" title="起身离座（旁观）" :hidden="!seated" @click="send('stand')">
           <span class="ico">⇣</span><span class="lbl">起身</span>
         </button>
@@ -160,6 +193,9 @@ onBeforeUnmount(() => {
         </button>
         <button class="tbtn" id="btn-unbot" title="本手结束后移除所有电脑玩家" :hidden="!inRoom || !hasBots" @click="send('removeBots')">
           <span class="ico">−</span><span class="lbl">电脑</span>
+        </button>
+        <button class="tbtn" id="btn-close" title="关闭牌桌并结算所有玩家输赢" :hidden="!isOwner" @click="closeTable">
+          <span class="ico">⏻</span><span class="lbl">关桌</span>
         </button>
         <button class="tbtn" id="btn-room" :title="online ? '离开房间，回到主页' : '单机牌桌设置（可返回主页）'" @click="onRoomBtn">
           <span class="ico">⌂</span><span class="lbl">{{ online ? '离开' : '牌桌' }}</span>
@@ -195,6 +231,11 @@ onBeforeUnmount(() => {
           </li>
         </ol>
       </aside>
+      <aside v-if="flow" class="flow-pop" aria-label="本手行动路线">
+        <h3>第 {{ flow.handNo }} 手 · 行动路线<button class="x" title="关闭" @click="ui.flowOpen = false">✕</button></h3>
+        <HandFlow v-if="flow.actions.length" :actions="flow.actions" :board="flow.board" :name-of="flow.nameOf" />
+        <p v-else class="dim">本手还没有开始</p>
+      </aside>
       <PokerTable />
     </main>
 
@@ -228,7 +269,10 @@ onBeforeUnmount(() => {
       <SoloSetupPanel v-else-if="overlay === 'solo-setup'" />
       <CreatePanel v-else-if="overlay === 'create'" />
       <SharePanel v-else-if="overlay === 'share'" />
+      <HistoryPanel v-else-if="overlay === 'history'" />
       <GameOverPanel v-else-if="overlay === 'over'" />
+      <SettlePanel v-else-if="overlay === 'settle'" />
+      <BuyInPanel v-else-if="overlay === 'buyin'" />
     </div>
   </div>
 </template>

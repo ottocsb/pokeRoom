@@ -98,6 +98,69 @@ export interface TableState {
   turnLeft: number;
   turnTotal: number;
   watchers: string[];
+  /** betting actions of the current (or just finished) hand */
+  actions: HandAction[];
+  /** pending buy-in requests: the owner sees all, others only their own */
+  requests: Array<{ user: string; seat: number }>;
+  /** owner closed the table; it settles when the current hand ends */
+  closing: boolean;
+}
+/** One player's line in the final settlement */
+export interface SettleRow {
+  name: string;
+  user?: string;
+  buyIn: number;
+  chips: number;
+  net: number;
+}
+
+/** One betting action. `amount` = chips put in by this action, `to` = the player's total bet on this street after it. */
+export interface HandAction {
+  street: 'preflop' | 'flop' | 'turn' | 'river';
+  seat: number;
+  act: 'sb' | 'bb' | 'fold' | 'check' | 'call' | 'bet' | 'raise';
+  amount: number;
+  to: number;
+  allIn: boolean;
+}
+/** One finished hand, as stored in the db. Holds what a GGPoker-style hand history needs. */
+export interface HandLog {
+  handNo: number;
+  time: number;
+  /** invite code */
+  room: string;
+  max: 6 | 9;
+  sb: number;
+  bb: number;
+  /** dealer seat */
+  button: number;
+  board: Card[];
+  summary: HandSummary | null;
+  /** in order, blinds first */
+  actions: HandAction[];
+  players: Array<{
+    seat: number;
+    name: string;
+    user?: string;
+    /** chips at the start of the hand (before blinds) */
+    stack: number;
+    /** empty when the viewer may not see these cards */
+    hole: Card[];
+    shown: boolean;
+    folded: boolean;
+    desc: string;
+    /** chips won/lost this hand */
+    net: number;
+    /** chips won from the pot (excluding the uncalled bet) */
+    collected: number;
+    /** own bet nobody called, given back */
+    uncalled: number;
+  }>;
+}
+export interface Standing {
+  name: string;
+  net: number;
+  hands: number;
 }
 
 export type ClientMsg =
@@ -112,6 +175,9 @@ export type ClientMsg =
   | { t: 'stand' }
   | { t: 'addBot' }
   | { t: 'removeBots' }
+  | { t: 'history' }
+  | { t: 'approve'; user: string; ok: boolean }
+  | { t: 'closeTable' }
   | { t: 'act'; type: ActionType; to?: number };
 
 export type ServerMsg =
@@ -122,6 +188,8 @@ export type ServerMsg =
   | { t: 'left' }
   | { t: 'joinFail'; msg: string }
   | { t: 'ev'; e: GameEvent }
+  | { t: 'history'; hands: HandLog[]; standings: Standing[] }
+  | { t: 'closed'; name: string; rows: SettleRow[] }
   | { t: 'notice'; msg: string }
   | { t: 'error'; msg: string }
   | { t: 'kicked'; msg: string };

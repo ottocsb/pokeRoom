@@ -6,7 +6,7 @@ import { DEFAULT_ROOM, Game, GameEvent, Player, RoomConfig } from './game';
 import { applyTheme, loadTheme } from './themes';
 import { isMuted, setMuted, sfx } from './sound';
 import { Net, RemoteTable, savedToken, saveToken, TableLike } from './remote';
-import { sanitizeCreate, type CreateRoomCfg, type RoomInfo, type ServerMsg } from './protocol';
+import { sanitizeCreate, type CreateRoomCfg, type HandLog, type RoomInfo, type ServerMsg, type SettleRow, type Standing } from './protocol';
 
 // ---------- persisted prefs ----------
 function loadJSON<T>(key: string, fallback: T): T {
@@ -60,6 +60,12 @@ export const ui = reactive({
   authTab: (initialInvite && !savedToken() ? 'register' : 'login') as 'login' | 'register',
   inviteCode: initialInvite,
   shareOpen: false,
+  historyOpen: false,
+  /** action line of the current hand (opened from the pot) */
+  flowOpen: false,
+  history: null as { hands: HandLog[]; standings: Standing[] } | null,
+  /** settlement shown after the owner closed the table */
+  settle: null as { name: string; rows: SettleRow[] } | null,
   netStatus: net.status,
   theme: loadTheme(),
   unit: (() => {
@@ -264,7 +270,11 @@ export const statusText = computed(() => {
   const g = game.value;
   const h = g.human;
   const online = ui.mode === 'online';
-  if (!h) return online ? `旁观中 · 点击牌桌上的「入座」坐下（买入 ${money(remote.state?.room.buyIn ?? 0)}）` : '';
+  if (!h) {
+    if (!online) return '';
+    if (remote.state?.requests.some((r) => r.user === ui.user)) return '已申请带入，等待房主同意…';
+    return `旁观中 · 点击牌桌上的「入座」申请带入（${money(remote.state?.room.buyIn ?? 0)}）`;
+  }
   const my = can.value.my;
   const humansOnline = online ? g.players.filter((p) => !p.empty).length : 0;
   if (online && g.phase === 'idle') return humansOnline < 2 ? '等待其他玩家入座…（可点顶栏「+电脑」补位）' : '即将开始发牌…';
@@ -424,9 +434,27 @@ export function leaveRoom(toRooms = true) {
   if (ui.mode !== 'online') return;
   leavingRoom = true;
   ui.shareOpen = false;
+  ui.historyOpen = false;
+  ui.history = null;
+  ui.flowOpen = false;
   net.send({ t: 'leave' });
   useLocal();
   if (toRooms) ui.screen = ui.user ? 'rooms' : 'login';
+}
+
+export function openHistory() {
+  ui.historyOpen = true;
+  net.send({ t: 'history' });
+}
+
+export function answerBuyIn(user: string, ok: boolean) {
+  sfx.click();
+  net.send({ t: 'approve', user, ok });
+}
+export function closeTable() {
+  sfx.click();
+  const playing = game.value.phase === 'betting';
+  if (confirm(playing ? '确定关闭牌桌？当前这手打完后结算。' : '确定关闭牌桌并结算？')) net.send({ t: 'closeTable' });
 }
 
 export function logout() {
@@ -529,6 +557,21 @@ net.onMessage = (m: ServerMsg) => {
       break;
     case 'ev':
       if (ui.mode === 'online') onGameEvent(m.e);
+      // keep an open history panel up to date
+      if (m.e.type === 'win' && ui.historyOpen) net.send({ t: 'history' });
+      break;
+    case 'history':
+      ui.history = { hands: m.hands, standings: m.standings };
+      break;
+    case 'closed':
+      // the server already dissolved the room: leave without sending 'leave'
+      ui.settle = { name: m.name, rows: m.rows };
+      ui.shareOpen = false;
+      ui.historyOpen = false;
+      ui.history = null;
+      ui.flowOpen = false;
+      if (ui.mode === 'online') useLocal();
+      ui.screen = ui.user ? 'rooms' : 'login';
       break;
     case 'notice':
     case 'error':

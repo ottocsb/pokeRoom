@@ -47,7 +47,7 @@ function back() {
           </button>
         </div>
         <p class="lobby-note">
-          小盲 <b>{{ d.sb }}</b> · 大盲 <b>{{ d.bb }}</b> · 每人买入 <b>{{ d.buyIn.toLocaleString('en-US') }}</b>。房间只能通过邀请链接或邀请码进入；无人 30 分钟后自动解散。
+          小盲 <b>{{ d.sb }}</b> · 大盲 <b>{{ d.bb }}</b> · 每人带入 <b>{{ d.buyIn.toLocaleString('en-US') }}</b>，其他玩家入座需你同意。房间只能通过邀请链接或邀请码进入；无人 30 分钟后自动解散。
         </p>
       </div>
       <div class="lobby-preview">
