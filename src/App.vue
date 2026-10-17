@@ -28,6 +28,7 @@ import PokerTable from './components/PokerTable.vue';
 import HeroPanel from './components/HeroPanel.vue';
 import HandFlow from './components/HandFlow.vue';
 import ChatPanel from './components/ChatPanel.vue';
+import RangePanel from './components/RangePanel.vue';
 import LoginPanel from './components/overlays/LoginPanel.vue';
 import HomePanel from './components/overlays/HomePanel.vue';
 import CreatePanel from './components/overlays/CreatePanel.vue';
@@ -57,6 +58,8 @@ const flow = computed(() => {
   if (!ui.flowOpen || !online.value || !remote.state) return null;
   return { handNo: g.handNo, actions: remote.state.actions, board: g.board, nameOf: (seat: number) => g.players[seat]?.name || `${seat + 1}号` };
 });
+/** the range chart is a preflop-only aid */
+const preflop = computed(() => game.value.street === 'preflop');
 const seated = computed(() => inRoom.value && remote.mySeat >= 0);
 const isOwner = computed(() => inRoom.value && remote.state!.room.owner === ui.user);
 /** buy-in requests the owner has to answer */
@@ -126,6 +129,12 @@ function onHistory() {
 function onLadder() {
   sfx.click();
   ui.ladderOpen = !ui.ladderOpen;
+  if (ui.ladderOpen) ui.rangeOpen = false;
+}
+function onRange() {
+  sfx.click();
+  ui.rangeOpen = !ui.rangeOpen;
+  if (ui.rangeOpen) ui.ladderOpen = false;
 }
 function onTheme() {
   sfx.click();
@@ -148,6 +157,7 @@ function onKey(e: KeyboardEvent) {
     ui.themeOpen = false;
     openRaise(false);
     ui.ladderOpen = false;
+    ui.rangeOpen = false;
     ui.shareOpen = false;
     ui.historyOpen = false;
     ui.flowOpen = false;
@@ -247,6 +257,9 @@ onBeforeUnmount(() => {
         <button class="tbtn" id="btn-ladder" :class="{ on: ui.ladderOpen }" title="牌型表" @click="onLadder">
           <span class="ico">▤</span><span class="lbl">牌型</span>
         </button>
+        <button class="tbtn" id="btn-range" :class="{ on: ui.rangeOpen }" title="翻前 GTO 范围表（仅翻前可用）" :hidden="!preflop" @click="onRange">
+          <span class="ico">▦</span><span class="lbl">范围</span>
+        </button>
         <button class="tbtn" id="btn-theme" :class="{ on: ui.themeOpen }" title="更换牌桌主题" @click.stop="onTheme">
           <span class="ico">◐</span><span class="lbl">主题</span>
         </button>
@@ -267,6 +280,7 @@ onBeforeUnmount(() => {
           </li>
         </ol>
       </aside>
+      <RangePanel v-if="ui.rangeOpen && preflop" />
       <aside v-if="flow" class="flow-pop" aria-label="本手行动路线">
         <h3>第 {{ flow.handNo }} 手 · 行动路线<button class="x" title="关闭" @click="ui.flowOpen = false">✕</button></h3>
         <HandFlow v-if="flow.actions.length" :actions="flow.actions" :board="flow.board" :name-of="flow.nameOf" />

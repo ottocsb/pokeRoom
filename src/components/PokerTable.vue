@@ -4,6 +4,7 @@ import { cardKey, type Card } from '../cards';
 import { sfx } from '../sound';
 import { EMOTES } from '../protocol';
 import { actionText, clockFrac, game, hl, money, moneyU, net, remote, RINGS, seatMap, sendEmote, summaryText, toggleEmotePick, ui } from '../store';
+import { seatPositions } from '../ranges';
 import PlayingCard from './PlayingCard.vue';
 
 // ---------- table size (was layout()) ----------
@@ -55,6 +56,8 @@ const view = computed(() => {
   const showdown = g.phase === 'handover' && g.street === 'showdown';
   const { slotOf, empty } = seatMap(g);
   const canSit = ui.mode === 'online' && remote.mySeat < 0 && !!remote.state;
+  const posOf = seatPositions(g.players, g.dealer);
+  const headsUp = posOf.size === 2;
   const empties = empty.map(({ slot, seat }) => ({ seat, x: pos[slot][0], y: pos[slot][1] }));
   const seats = [];
   const bets = [];
@@ -94,6 +97,8 @@ const view = computed(() => {
       name: p.name,
       voice: !!p.user && !!remote.state?.voice.includes(p.user),
       dealer: g.dealer === p.id,
+      // blinds badge; heads-up the button is also the small blind
+      blind: posOf.get(p.id) === 'BB' ? 'BB' : posOf.get(p.id) === 'SB' || (headsUp && g.dealer === p.id) ? 'SB' : '',
       style: p.isHuman ? '' : p.style.label,
       chips: p.waiting ? '下一手加入' : p.out ? '出局' : money(p.chips),
       clock: ui.mode === 'online' && g.turn === p.id && g.phase === 'betting' && !!remote.turnDeadline,
@@ -220,7 +225,8 @@ function sit(seat: number) {
             <PlayingCard v-for="c in s.cards" :key="`${handNo}-${c.k}`" :card="c.card" :k="c.k" :cls="c.cls" :delay="c.delay" />
           </div>
           <div class="plate">
-            <div class="avatar" title="发送表情" @click="toggleEmotePick(s.id)">{{ s.avatar }}<span v-if="s.dealer" class="dealer" title="庄家">D</span></div>
+            <div class="avatar" title="发送表情" @click="toggleEmotePick(s.id)">{{ s.avatar }}<span v-if="s.dealer" class="dealer" title="庄家">D</span
+              ><span v-if="s.blind" class="blind" :class="s.blind.toLowerCase()" :title="s.blind === 'SB' ? '小盲' : '大盲'">{{ s.blind }}</span></div>
             <div class="info">
               <div class="name"><span class="nm">{{ s.name }}</span><span v-if="s.voice" class="voice-tag" title="在语音中">🎙</span><span v-if="s.style" class="style-tag">{{ s.style }}</span></div>
               <div class="chips">{{ s.chips }}</div>

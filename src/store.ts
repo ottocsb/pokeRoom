@@ -82,6 +82,8 @@ export const ui = reactive({
   })() as 'chips' | 'bb',
   muted: isMuted(),
   ladderOpen: false,
+  /** preflop range chart */
+  rangeOpen: false,
   themeOpen: false,
   raiseOpen: false,
   raiseValue: 0,
