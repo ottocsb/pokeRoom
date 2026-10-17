@@ -3,7 +3,7 @@
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
 import type { IncomingMessage } from 'node:http';
 import type { Duplex } from 'node:stream';
-import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
+import { createHmac, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -873,6 +873,16 @@ function avatarOf(name: string) {
   return [...name][0]?.toUpperCase() ?? '?';
 }
 
+/** voice relay (coturn --use-auth-secret): a 24h account signed with the shared secret, so the secret never reaches the browser */
+function turnCred(user: string) {
+  const urls = process.env.TURN_URL;
+  const secret = process.env.TURN_SECRET;
+  if (!urls || !secret) return undefined;
+  const username = `${Math.floor(Date.now() / 1000) + 86400}:${user}`;
+  const credential = createHmac('sha1', secret).update(username).digest('base64');
+  return { urls: urls.split(','), username, credential };
+}
+
 // ---------------------------------------------------------------- server
 const ACTIONS = new Set<ActionType>(['fold', 'check', 'call', 'raise', 'allin']);
 
@@ -948,7 +958,7 @@ export function createPokerServer(opts: { dataDir: string }) {
     c.user = rec.name;
     c.token = token;
     clients.set(rec.name, c);
-    hub.send(c, { t: 'authed', user: rec.name, token });
+    hub.send(c, { t: 'authed', user: rec.name, token, turn: turnCred(rec.name) });
     hub.send(c, { t: 'rooms', rooms: lobby() });
     // reconnect: restore the room the user was in
     const t = tables.find((t) => t.members.has(rec.name));

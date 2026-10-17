@@ -228,7 +228,8 @@ export type ClientMsg =
   | { t: 'act'; type: ActionType; to?: number };
 
 export type ServerMsg =
-  | { t: 'authed'; user: string; token: string }
+  /** `turn`: voice relay server with a temporary account (missing = not configured) */
+  | { t: 'authed'; user: string; token: string; turn?: { urls: string[]; username: string; credential: string } }
   | { t: 'authFail'; msg: string }
   | { t: 'rooms'; rooms: RoomInfo[] }
   | { t: 'state'; state: TableState }

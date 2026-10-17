@@ -38,6 +38,15 @@ npm run server     # 部署用：打包服务端，用一个端口同时提供�
 
 ### Docker
 
+先在项目根目录建 `.env`，配置语音中继（TURN，玩家之间直连不通时转发语音）：
+
+```bash
+TURN_IP=服务器公网 IP
+TURN_SECRET=一串足够长的随机字符串   # 例如 openssl rand -hex 24 生成
+```
+
+服务器防火墙 / 云安全组要放行 `3478`（UDP + TCP）和 `49160-49200`（UDP）。语音需要 HTTPS 访问页面（浏览器只在 HTTPS 或 localhost 下允许用麦克风）。
+
 ```bash
 docker compose up -d --build     # 构建镜像并后台启动，访问 http://localhost:8787
 PORT=9000 docker compose up -d   # 改用宿主机 9000 端口

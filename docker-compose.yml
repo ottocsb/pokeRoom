@@ -1,3 +1,5 @@
+# Needs a .env next to this file (see README):
+#   TURN_IP=server public IP     TURN_SECRET=long random string
 services:
   poker:
     build: .
@@ -6,9 +8,29 @@ services:
     restart: unless-stopped
     ports:
       - "${PORT:-8787}:8787"
+    environment:
+      # voice relay handed to browsers at login (temporary accounts signed with TURN_SECRET)
+      TURN_URL: "turn:${TURN_IP:?set TURN_IP in .env}:3478?transport=udp,turn:${TURN_IP}:3478?transport=tcp"
+      TURN_SECRET: "${TURN_SECRET:?set TURN_SECRET in .env}"
     volumes:
       # accounts, hand history and table records (poker.db)
       - poker-data:/app/server-data
+
+  # voice relay (TURN) for players who can't connect directly; open 3478/udp+tcp and 49160-49200/udp on the server
+  turn:
+    image: coturn/coturn
+    container_name: pokeroom-turn
+    restart: unless-stopped
+    network_mode: host
+    command: >
+      -n --log-file=stdout --no-cli --no-tls --no-dtls --fingerprint
+      --listening-port=3478 --min-port=49160 --max-port=49200
+      --external-ip=${TURN_IP}
+      --realm=pokeroom --use-auth-secret --static-auth-secret=${TURN_SECRET}
+      --no-multicast-peers
+      --denied-peer-ip=0.0.0.0-0.255.255.255 --denied-peer-ip=10.0.0.0-10.255.255.255
+      --denied-peer-ip=127.0.0.0-127.255.255.255 --denied-peer-ip=169.254.0.0-169.254.255.255
+      --denied-peer-ip=172.16.0.0-172.31.255.255 --denied-peer-ip=192.168.0.0-192.168.255.255
 
 volumes:
   poker-data:

@@ -650,6 +650,7 @@ net.onMessage = (m: ServerMsg) => {
   switch (m.t) {
     case 'authed':
       ui.user = m.user;
+      voice.turn = m.turn;
       ui.authBusy = false;
       ui.authErr = '';
       ui.autoLogin = false;

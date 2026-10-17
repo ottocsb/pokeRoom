@@ -7,16 +7,16 @@ type Signal = { sdp?: RTCSessionDescriptionInit; ice?: RTCIceCandidateInit };
 /** debug output in the browser console, filter by "[voice]" */
 const log = (...a: unknown[]) => console.log('[voice]', ...a);
 
-// STUN servers reachable from mainland China (third-party, free, no guarantee); for a TURN relay add your own coturn here
-const ICE: RTCConfiguration = {
-  iceServers: [{ urls: ['stun:stun.miwifi.com:3478', 'stun:stun.chat.bilibili.com:3478', 'stun:stun.qq.com:3478'] }],
-};
+// public STUN servers reachable from mainland China (third-party, no guarantee)
+const STUN: RTCIceServer = { urls: ['stun:stun.miwifi.com:3478', 'stun:stun.chat.bilibili.com:3478', 'stun:stun.qq.com:3478'] };
 
 export class Voice {
   /** own microphone (null = not in the channel) */
   private mic: MediaStream | null = null;
   private peers = new Map<string, { pc: RTCPeerConnection; audio: HTMLAudioElement }>();
   muted = false;
+  /** our own relay (TURN), handed out by the server at login; used when a direct connection can't get through */
+  turn: RTCIceServer | undefined;
   /** a peer connection got through / failed */
   onState: (user: string, ok: boolean) => void = () => {};
 
@@ -88,11 +88,11 @@ export class Voice {
   }
 
   private connect(user: string) {
-    const pc = new RTCPeerConnection(ICE);
+    const pc = new RTCPeerConnection({ iceServers: this.turn ? [STUN, this.turn] : [STUN] });
     const audio = new Audio();
     audio.autoplay = true;
     this.mic!.getTracks().forEach((t) => pc.addTrack(t, this.mic!));
-    log('connect', user);
+    log('connect', user, this.turn ? `turn ${this.turn.urls}` : 'no turn');
     pc.onicecandidate = (e) => {
       // typ host = LAN, srflx = public address via STUN, relay = TURN; no srflx means STUN is unreachable
       log(user, e.candidate ? `local candidate ${e.candidate.type} ${e.candidate.protocol} ${e.candidate.address}:${e.candidate.port}` : 'candidates done');
