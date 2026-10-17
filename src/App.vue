@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { CATEGORY_HINTS, CATEGORY_NAMES } from './evaluator';
 import { sfx } from './sound';
 import { THEMES } from './themes';
 import {
@@ -8,7 +7,6 @@ import {
   closeTable,
   doAct,
   game,
-  heroCat,
   leaveRoom,
   local,
   net,
@@ -126,15 +124,9 @@ function onHistory() {
   sfx.click();
   openHistory();
 }
-function onLadder() {
-  sfx.click();
-  ui.ladderOpen = !ui.ladderOpen;
-  if (ui.ladderOpen) ui.rangeOpen = false;
-}
 function onRange() {
   sfx.click();
   ui.rangeOpen = !ui.rangeOpen;
-  if (ui.rangeOpen) ui.ladderOpen = false;
 }
 function onTheme() {
   sfx.click();
@@ -156,7 +148,6 @@ function onKey(e: KeyboardEvent) {
   if (k === 'escape') {
     ui.themeOpen = false;
     openRaise(false);
-    ui.ladderOpen = false;
     ui.rangeOpen = false;
     ui.shareOpen = false;
     ui.historyOpen = false;
@@ -254,9 +245,6 @@ onBeforeUnmount(() => {
         >
           <span class="ico">⇄</span><span class="lbl-fixed" id="unit-lbl">{{ ui.unit === 'bb' ? 'BB' : '分' }}</span>
         </button>
-        <button class="tbtn" id="btn-ladder" :class="{ on: ui.ladderOpen }" title="牌型表" @click="onLadder">
-          <span class="ico">▤</span><span class="lbl">牌型</span>
-        </button>
         <button class="tbtn" id="btn-range" :class="{ on: ui.rangeOpen }" title="翻前 GTO 范围表（仅翻前可用）" :hidden="!preflop" @click="onRange">
           <span class="ico">▦</span><span class="lbl">范围</span>
         </button>
@@ -271,15 +259,6 @@ onBeforeUnmount(() => {
     </header>
 
     <main class="stage">
-      <aside class="ladder" id="ladder" :class="{ open: ui.ladderOpen }" aria-label="牌型表">
-        <h3>牌型大小</h3>
-        <ol>
-          <li v-for="i in [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]" :key="i" :class="{ cur: i === heroCat }">
-            <span class="lv">{{ i + 1 }}</span><span class="nm">{{ CATEGORY_NAMES[i] }}</span><span class="ht">{{ CATEGORY_HINTS[i] }}</span
-            ><span v-if="i === heroCat" class="you">你</span>
-          </li>
-        </ol>
-      </aside>
       <RangePanel v-if="ui.rangeOpen && preflop" />
       <aside v-if="flow" class="flow-pop" aria-label="本手行动路线">
         <h3>第 {{ flow.handNo }} 手 · 行动路线<button class="x" title="关闭" @click="ui.flowOpen = false">✕</button></h3>

@@ -81,7 +81,6 @@ export const ui = reactive({
     }
   })() as 'chips' | 'bb',
   muted: isMuted(),
-  ladderOpen: false,
   /** preflop range chart */
   rangeOpen: false,
   themeOpen: false,
@@ -799,7 +798,7 @@ setInterval(() => {
       rooms: ui.rooms.map((r) => `${r.id}:${r.seated}/${r.max}`),
       theme: ui.theme,
       unit: ui.unit,
-      ui: { themePopOpen: ui.themeOpen, ladderOpen: ui.ladderOpen, raiseOpen: ui.raiseOpen },
+      ui: { themePopOpen: ui.themeOpen, raiseOpen: ui.raiseOpen },
     };
   },
   reset: () => {
