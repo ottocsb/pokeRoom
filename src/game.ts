@@ -42,6 +42,8 @@ export interface Player {
   result: HandResult | null;
   won: number;
   revealed: boolean;
+  /** online: hole cards (indices) the player chose to show after the hand */
+  shown?: number[];
   /** online: seat has nobody in it (always `out`) */
   empty?: boolean;
   /** online: account name of the seated user; undefined for bots */
@@ -262,6 +264,7 @@ export class Game {
       p.result = null;
       p.won = 0;
       p.revealed = false;
+      p.shown = [];
     }
     const alive = (p: Player) => !p.out;
     this.dealer = this.nextIndex(this.dealer < 0 ? this.players.length - 1 : this.dealer, alive);
@@ -404,7 +407,9 @@ export class Game {
     };
     [p.lastLabel, p.lastAmount] = labels[type];
     this.onEvent({ type: 'action', player: p.id, action: type, amount: paid });
-    this.turn = this.nextIndex(this.turn, (q) => this.canAct(q));
+    // round over (one player left / everyone acted): nobody may act until proceed() moves on
+    const over = this.players.filter((q) => this.inHand(q)).length <= 1 || this.roundComplete();
+    this.turn = over ? -1 : this.nextIndex(this.turn, (q) => this.canAct(q));
     this.onUpdate();
     this.schedule(() => this.proceed(), 250);
   }

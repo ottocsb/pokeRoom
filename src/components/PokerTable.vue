@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { cardKey, type Card } from '../cards';
 import { sfx } from '../sound';
-import { actionText, clockFrac, game, hl, money, net, remote, RINGS, seatMap, summaryText, ui } from '../store';
+import { EMOTES } from '../protocol';
+import { actionText, clockFrac, game, hl, money, moneyU, net, remote, RINGS, seatMap, sendEmote, summaryText, toggleEmotePick, ui } from '../store';
 import PlayingCard from './PlayingCard.vue';
 
 // ---------- table size (was layout()) ----------
@@ -16,8 +17,12 @@ onMounted(() => {
     H.value = wrap.value!.clientHeight;
   });
   ro.observe(wrap.value!);
+  document.addEventListener('click', closePick);
 });
-onBeforeUnmount(() => ro?.disconnect());
+onBeforeUnmount(() => {
+  ro?.disconnect();
+  document.removeEventListener('click', closePick);
+});
 
 const portrait = computed(() => W.value / Math.max(1, H.value) < 1.15);
 const nine = computed(() => game.value.room.max === 9);
@@ -57,6 +62,7 @@ const view = computed(() => {
     const slot = slotOf.get(p.id);
     if (slot === undefined || p.empty) continue;
     const [x, y] = pos[slot];
+    const showing = !!p.shown?.length && g.phase === 'handover';
     const cls = [
       p.isHuman ? 'human' : '',
       p.folded && !p.out ? 'folded' : '',
@@ -67,12 +73,13 @@ const view = computed(() => {
       x < 25 ? 'side-left' : x > 75 ? 'side-right' : '',
       y < 35 ? 'top' : '',
       y > 70 && !p.isHuman ? 'bottom' : '',
+      showing ? 'showing' : '',
     ];
     const show = p.revealed && !p.folded;
     const cards =
       !p.isHuman && p.hole.length
         ? p.hole.map((c: Card | null, k) =>
-            show
+            show || (c && showing && p.shown!.includes(k))
               ? { card: c, k: `s${p.id}f${k}`, cls: h.owner === p.id && c && h.keys.has(cardKey(c)) ? 'core' : '', delay: 0 }
               : { card: null, k: `s${p.id}b${k}`, cls: '', delay: (k * 5 + p.id) * 50 },
           )
@@ -89,7 +96,7 @@ const view = computed(() => {
       style: p.isHuman ? '' : p.style.label,
       chips: p.waiting ? '下一手加入' : p.out ? '出局' : money(p.chips),
       clock: ui.mode === 'online' && g.turn === p.id && g.phase === 'betting' && !!remote.turnDeadline,
-      bubble: p.lastLabel && !showdown ? actionText(p) : '',
+      bubble: showing ? '秀牌' : p.lastLabel && !showdown ? actionText(p) : '',
       tag: showdown && p.result && !p.folded ? p.result.desc : '',
       tagWin: p.won > 0,
       won: p.won > 0 && g.phase === 'handover' ? `+${money(p.won)}` : '',
@@ -97,7 +104,7 @@ const view = computed(() => {
     if (p.bet > 0) {
       const side = Math.abs(x - 50) > 40 && y > 35 && y < 70;
       const t = side ? (portrait.value ? 0.26 : 0.3) : portrait.value ? 0.4 : 0.42;
-      bets.push({ id: p.id, x: x + (50 - x) * t, y: y + (50 - y) * t, amount: money(p.bet) });
+      bets.push({ id: p.id, x: x + (50 - x) * t, y: y + (50 - y) * t, amount: moneyU(p.bet) });
     }
   }
   return { canSit, empties, seats, bets };
@@ -126,7 +133,23 @@ const pot = computed(() => {
 });
 const msg = computed(() => (game.value.phase === 'handover' ? summaryText() : ''));
 const clock = computed(() => clockFrac());
+const clockSecs = computed(() => Math.ceil(Math.max(0, remote.turnDeadline - ui.now) / 1000));
 const handNo = computed(() => game.value.handNo);
+
+// ---------- emotes ----------
+function closePick(e: MouseEvent) {
+  if (ui.emotePick >= 0 && !(e.target as Element).closest?.('.emote-pick, .avatar')) ui.emotePick = -1;
+}
+/** emotes in flight: from the sender's seat to the target's (same spot when sent to yourself) */
+const emotes = computed(() => {
+  const at = new Map(view.value.seats.map((s) => [s.id, s]));
+  return ui.emotes.flatMap((e) => {
+    const to = at.get(e.to);
+    if (!to) return [];
+    const from = at.get(e.from) ?? to;
+    return [{ id: e.id, emoji: e.emoji, style: { '--fx': `${from.x}%`, '--fy': `${from.y}%`, '--tx': `${to.x}%`, '--ty': `${to.y}%` } }];
+  });
+});
 
 function toggleFlow() {
   if (ui.mode !== 'online') return;
@@ -169,25 +192,37 @@ function sit(seat: number) {
           </button>
           <div v-else class="seat-empty" :style="{ left: `${e.x}%`, top: `${e.y}%` }"><span>空座</span></div>
         </template>
-        <div v-for="s in view.seats" :key="`p${s.id}`" class="seat" :class="s.cls" :style="{ left: `${s.x}%`, top: `${s.y}%` }">
+        <div
+          v-for="s in view.seats"
+          :key="`p${s.id}`"
+          class="seat"
+          :class="[s.cls, { picking: ui.emotePick === s.id }]"
+          :style="{ left: `${s.x}%`, top: `${s.y}%` }"
+        >
           <div v-if="s.cards.length" class="seat-cards">
             <PlayingCard v-for="c in s.cards" :key="`${handNo}-${c.k}`" :card="c.card" :k="c.k" :cls="c.cls" :delay="c.delay" />
           </div>
           <div class="plate">
-            <div class="avatar">{{ s.avatar }}<span v-if="s.dealer" class="dealer" title="庄家">D</span></div>
+            <div class="avatar" title="发送表情" @click="toggleEmotePick(s.id)">{{ s.avatar }}<span v-if="s.dealer" class="dealer" title="庄家">D</span></div>
             <div class="info">
               <div class="name"><span class="nm">{{ s.name }}</span><span v-if="s.style" class="style-tag">{{ s.style }}</span></div>
               <div class="chips">{{ s.chips }}</div>
             </div>
             <i v-if="s.clock" class="clock" :class="{ low: clock < 0.3 }" :style="{ transform: `scaleX(${clock.toFixed(3)})` }"></i>
+            <b v-if="s.clock" class="clock-num" :class="{ low: clock < 0.3 }">{{ clockSecs }}</b>
           </div>
           <div v-if="s.bubble" class="bubble">{{ s.bubble }}</div>
           <div v-if="s.tag" class="hand-tag" :class="{ win: s.tagWin }">{{ s.tag }}</div>
           <div v-if="s.won" class="won">{{ s.won }}</div>
+          <div v-if="ui.says[s.id]" :key="ui.says[s.id].id" class="chat-say">{{ ui.says[s.id].text }}</div>
+          <div v-if="ui.emotePick === s.id" class="emote-pick">
+            <button v-for="em in EMOTES" :key="em" @click="sendEmote(s.id, em)">{{ em }}</button>
+          </div>
         </div>
         <div v-for="b in view.bets" :key="`bet${b.id}`" class="bet" :style="{ left: `${b.x}%`, top: `${b.y}%` }">
           <i class="chip"></i>{{ b.amount }}
         </div>
+        <div v-for="e in emotes" :key="`em${e.id}`" class="emote" :style="e.style">{{ e.emoji }}</div>
       </div>
     </div>
   </div>

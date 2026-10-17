@@ -51,6 +51,10 @@ export function sanitizeCreate(raw: Partial<CreateRoomCfg> | null | undefined): 
 }
 /** Invite codes: 6 chars, no look-alikes (0/O, 1/I/L) */
 export const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+/** Table emotes: click a seat's avatar to send one (to yourself or to another player) */
+export const EMOTES = ['👍', '👏', '😄', '😂', '😭', '😡', '🤔', '😱', '🌹', '🍺', '💣', '🥚'];
+/** max length of one chat message */
+export const CHAT_MAX = 60;
 export const normCode = (s: string) => s.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 export interface SeatView {
@@ -75,6 +79,8 @@ export interface SeatView {
   result: HandResult | null;
   won: number;
   revealed: boolean;
+  /** hole cards (indices) shown voluntarily after the hand */
+  shown: number[];
   waiting: boolean;
   leaving: boolean;
   offline: boolean;
@@ -191,6 +197,9 @@ export type ClientMsg =
   | { t: 'approve'; user: string; ok: boolean }
   | { t: 'closeTable' }
   | { t: 'sessions' }
+  | { t: 'emote'; to: number; emoji: string }
+  | { t: 'show'; cards: number[] }
+  | { t: 'chat'; text: string }
   | { t: 'act'; type: ActionType; to?: number };
 
 export type ServerMsg =
@@ -204,6 +213,9 @@ export type ServerMsg =
   | { t: 'history'; hands: HandLog[]; standings: Standing[] }
   | { t: 'closed'; name: string; rows: SettleRow[] }
   | { t: 'sessions'; list: SessionRec[] }
+  | { t: 'emote'; from: number; to: number; emoji: string }
+  /** `seat` = -1 when a spectator speaks */
+  | { t: 'chat'; user: string; seat: number; text: string }
   | { t: 'notice'; msg: string }
   | { t: 'error'; msg: string }
   | { t: 'kicked'; msg: string };

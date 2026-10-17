@@ -93,4 +93,23 @@ export const sfx = {
   click() {
     tone(1200, 0.03, 'square', 0.025);
   },
+  /** someone shoves: low boom + a pile of chips + a rising stinger */
+  allin() {
+    const a = ac();
+    if (!a) return;
+    const t = a.currentTime;
+    const o = a.createOscillator();
+    const g = a.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(150, t);
+    o.frequency.exponentialRampToValueAtTime(45, t + 0.5);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.3, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+    o.connect(g).connect(a.destination);
+    o.start(t);
+    o.stop(t + 0.65);
+    for (let i = 0; i < 10; i++) tone(2200 + Math.random() * 1200, 0.05, 'triangle', 0.06, 0.05 + i * 0.035);
+    [392, 523, 659].forEach((f, i) => tone(f, 0.35, 'sawtooth', 0.03, 0.15 + i * 0.07));
+  },
 };

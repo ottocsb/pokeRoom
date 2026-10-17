@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { cardKey } from '../cards';
+import { cardKey, rankLabel, SUIT_SYMBOL } from '../cards';
 import { describeDraws, describeHole, evaluate } from '../evaluator';
 import { sfx } from '../sound';
-import { can, doAct, game, heroCat, hl, money, onSlider, raiseBounds, setRaise, statusText, ui } from '../store';
+import { can, doAct, game, heroCat, hl, money, onSlider, raiseBounds, setPreAct, setRaise, showCards, statusText, ui } from '../store';
 import PlayingCard from './PlayingCard.vue';
 
 const handNo = computed(() => game.value.handNo);
@@ -12,7 +12,12 @@ const hole = computed(() => {
   const g = game.value;
   const h = g.human;
   if (!h || !h.hole.length) return [];
-  return h.hole.map((c, k) => ({ card: c, k: `h${k}`, cls: hl.value.owner === h.id && hl.value.keys.has(cardKey(c)) ? 'core' : '', delay: k * 300 }));
+  return h.hole.map((c, k) => ({
+    card: c,
+    k: `h${k}`,
+    cls: `${hl.value.owner === h.id && hl.value.keys.has(cardKey(c)) ? 'core' : ''} ${h.shown?.includes(k) ? 'shown' : ''}`,
+    delay: k * 300,
+  }));
 });
 const holeFolded = computed(() => {
   const h = game.value.human;
@@ -72,13 +77,50 @@ const raiseLabel = computed(() => {
 });
 const handover = computed(() => game.value.phase === 'handover');
 const online = computed(() => ui.mode === 'online');
+/** not your turn yet but still in the hand: you may pick fold / check-fold in advance */
+const preOpts = computed(() => {
+  const g = game.value;
+  const h = g.human;
+  return g.phase === 'betting' && !!h && g.canAct(h) && !can.value.my;
+});
+function pre(kind: 'fold' | 'checkfold') {
+  sfx.click();
+  setPreAct(ui.preAct === kind ? null : kind);
+}
+/** online, after a hand: your cards weren't shown down, so you may show them */
+const showOpts = computed(() => {
+  const g = game.value;
+  const h = g.human;
+  if (!online.value || g.phase !== 'handover' || !h || !h.hole.length || h.revealed) return null;
+  const shown = h.shown ?? [];
+  return {
+    cards: h.hole.map((c, k) => ({ k, label: `${rankLabel(c.r)}${SUIT_SYMBOL[c.s]}`, done: shown.includes(k) })),
+    all: shown.length >= h.hole.length,
+  };
+});
 
 // ---------- raise panel ----------
 const range = computed(() => {
   if (!ui.raiseOpen || !game.value.human) return { minTo: 0, maxTo: 100, step: 10 };
   return { ...raiseBounds(), step: game.value.sb };
 });
-const raiseOut = computed(() => (ui.raiseValue >= range.value.maxTo ? `全下 ${money(range.value.maxTo)}` : money(ui.raiseValue)));
+// typed amount, in the current unit; follows the slider/presets unless you are typing in it
+const amtEl = ref<HTMLInputElement>();
+const amt = ref('');
+const bbMode = computed(() => ui.unit === 'bb');
+const shownAmt = () => String(bbMode.value ? +(ui.raiseValue / game.value.bb).toFixed(1) : ui.raiseValue);
+watch([() => ui.raiseValue, bbMode], () => {
+  if (document.activeElement !== amtEl.value) amt.value = shownAmt();
+});
+function onAmt() {
+  const v = parseFloat(amt.value);
+  if (Number.isFinite(v)) ui.raiseValue = Math.round(bbMode.value ? v * game.value.bb : v);
+}
+function onAmtDone() {
+  setRaise(ui.raiseValue);
+  amt.value = shownAmt();
+}
+const isAllin = computed(() => ui.raiseOpen && ui.raiseValue >= range.value.maxTo);
 const raiseInfo = computed(() => `最小加注到 ${money(range.value.minTo)} · 底池 ${money(game.value.potTotal())}`);
 
 function preset(kind: 'min' | 'half' | 'pot' | 'max') {
@@ -134,10 +176,36 @@ function nextHand() {
             :value="ui.raiseValue"
             @input="onSlider(Number(($event.target as HTMLInputElement).value))"
           />
-          <output id="raise-out">{{ ui.raiseOpen ? raiseOut : 0 }}</output>
+          <label class="raise-amt" title="直接输入加注到的金额，回车确认">
+            <input
+              ref="amtEl"
+              v-model="amt"
+              type="number"
+              inputmode="decimal"
+              :step="bbMode ? 0.5 : game.sb"
+              @input="onAmt"
+              @change="onAmtDone"
+              @keydown.enter.prevent="doAct('raise')"
+            /><span>{{ bbMode ? 'BB' : '分' }}</span>
+          </label>
+          <span v-if="isAllin" class="raise-allin">全下</span>
         </div>
       </div>
-      <div class="actions" id="actions" :class="{ handover: handover && !online }">
+      <div v-if="showOpts" class="actions show-bar">
+        <button v-for="c in showOpts.cards" :key="c.k" class="act ghost" :disabled="c.done" @click="showCards([c.k])">
+          <span>{{ c.done ? '已秀' : '秀单张' }}</span><span>{{ c.label }}</span>
+        </button>
+        <button class="act raise" :disabled="showOpts.all" @click="showCards([0, 1])"><span>全秀</span></button>
+      </div>
+      <div v-else-if="preOpts" class="actions pre-bar">
+        <button class="act ghost" :class="{ on: ui.preAct === 'fold' }" @click="pre('fold')">
+          <span>{{ ui.preAct === 'fold' ? '✓ ' : '' }}提前弃牌</span>
+        </button>
+        <button class="act ghost" :class="{ on: ui.preAct === 'checkfold' }" @click="pre('checkfold')">
+          <span>{{ ui.preAct === 'checkfold' ? '✓ ' : '' }}过牌/弃牌</span><span>能过则过，否则弃牌</span>
+        </button>
+      </div>
+      <div v-else class="actions" id="actions" :class="{ handover: handover && !online }">
         <button class="act fold" id="act-fold" :disabled="!can.my" @click="doAct('fold')"><span>弃牌</span><kbd>F</kbd></button>
         <button class="act call" id="act-call" :disabled="!can.my" @click="doAct('call')">
           <template v-if="toCall > 0"><span>跟注</span><span>{{ money(toCall) }}</span></template>

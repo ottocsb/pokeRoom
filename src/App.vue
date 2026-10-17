@@ -25,6 +25,7 @@ import {
 import PokerTable from './components/PokerTable.vue';
 import HeroPanel from './components/HeroPanel.vue';
 import HandFlow from './components/HandFlow.vue';
+import ChatPanel from './components/ChatPanel.vue';
 import LoginPanel from './components/overlays/LoginPanel.vue';
 import HomePanel from './components/overlays/HomePanel.vue';
 import CreatePanel from './components/overlays/CreatePanel.vue';
@@ -124,13 +125,17 @@ function onLadder() {
 }
 function onTheme() {
   sfx.click();
+  menuOpen.value = false;
   ui.themeOpen = !ui.themeOpen;
 }
 
 // ---------- global input ----------
 const themePop = ref<HTMLElement>();
+/** phones: the top bar collapses into a ☰ menu */
+const menuOpen = ref(false);
 function onDocClick(e: MouseEvent) {
   if (ui.themeOpen && !themePop.value?.contains(e.target as Node)) ui.themeOpen = false;
+  if (menuOpen.value && !(e.target as Element).closest?.('.topbar')) menuOpen.value = false;
 }
 function onKey(e: KeyboardEvent) {
   if (e.repeat) return;
@@ -142,8 +147,15 @@ function onKey(e: KeyboardEvent) {
     ui.shareOpen = false;
     ui.historyOpen = false;
     ui.flowOpen = false;
+    ui.emotePick = -1;
+    ui.chatOpen = false;
+    menuOpen.value = false;
+    // leave the chat box so the game hotkeys work again
+    if (document.activeElement instanceof HTMLInputElement && document.activeElement.type === 'text') document.activeElement.blur();
     return;
   }
+  // typing in a text box (chat, raise amount) must not trigger the game hotkeys
+  if (e.target instanceof HTMLInputElement && (e.target.type === 'text' || e.target.type === 'number')) return;
   if (overlay.value === 'buyin') return;
   if (ui.screen !== 'table') {
     if (ui.screen === 'solo-setup' && k === 'enter') startRoom({ ...ui.draft });
@@ -174,13 +186,17 @@ onBeforeUnmount(() => {
 
 <template>
   <div id="app" :class="appClass">
-    <header class="topbar">
+    <header class="topbar" :class="{ 'menu-open': menuOpen }">
       <div class="brand">
         <span class="logo">♠</span>
         <span class="title">德州扑克</span>
         <span class="meta" id="meta">{{ meta }}</span>
       </div>
-      <nav class="top-actions">
+      <button class="tbtn menu-btn" title="菜单" @click="menuOpen = !menuOpen">
+        <span class="ico">{{ menuOpen ? '✕' : '☰' }}</span>
+      </button>
+      <nav class="top-actions" @click="menuOpen = false">
+        <div class="menu-meta">{{ meta }}</div>
         <button class="tbtn invite" id="btn-share" title="邀请好友：复制带邀请码的房间链接" :hidden="!inRoom" @click="onShare">
           <span class="ico">✉</span><span class="lbl">邀请</span>
         </button>
@@ -217,7 +233,7 @@ onBeforeUnmount(() => {
           <span class="ico">◐</span><span class="lbl">主题</span>
         </button>
         <button class="tbtn" id="btn-sound" :class="{ off: ui.muted }" title="音效" @click="toggleSound">
-          <span class="ico" id="sound-ico">{{ ui.muted ? '✕' : '♪' }}</span>
+          <span class="ico" id="sound-ico">{{ ui.muted ? '✕' : '♪' }}</span><span class="lbl-m">{{ ui.muted ? '音效已关' : '音效' }}</span>
         </button>
         <button class="tbtn" id="btn-new" title="重新开始" :hidden="online" @click="onNew"><span class="ico">↻</span><span class="lbl">重开</span></button>
       </nav>
@@ -239,6 +255,7 @@ onBeforeUnmount(() => {
         <p v-else class="dim">本手还没有开始</p>
       </aside>
       <PokerTable />
+      <ChatPanel v-if="inRoom" />
     </main>
 
     <HeroPanel />

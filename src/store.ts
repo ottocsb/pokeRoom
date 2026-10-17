@@ -82,8 +82,23 @@ export const ui = reactive({
   themeOpen: false,
   raiseOpen: false,
   raiseValue: 0,
+  /** action picked before your turn, done as soon as it comes */
+  preAct: null as null | 'fold' | 'checkfold',
   toast: '',
   toastId: 0,
+  /** seat whose emote picker is open (-1 = none) */
+  emotePick: -1,
+  /** emotes being shown on the table */
+  emotes: [] as Array<{ id: number; from: number; to: number; emoji: string }>,
+  /** online table chat */
+  chat: [] as Array<{ id: number; user: string; seat: number; text: string }>,
+  /** a message just came in: the (normally faded) chat panel lights up for a moment */
+  chatFresh: false,
+  /** phones: the chat sits behind a button; open state + messages missed meanwhile */
+  chatOpen: false,
+  chatUnread: 0,
+  /** latest chat line per seat, shown as a bubble for a few seconds */
+  says: {} as Record<number, { id: number; text: string }>,
   /** ticks while an online action clock is running */
   now: Date.now(),
   createDraft: sanitizeCreate(loadJSON('holdem-create', {} as CreateRoomCfg)),
@@ -119,6 +134,10 @@ export function money(n: number, bb = game.value.bb): string {
     return `${s} BB`;
   }
   return n.toLocaleString('en-US');
+}
+/** money() with its unit, for amounts shown in front of a player (bets, action bubbles) */
+export function moneyU(n: number) {
+  return ui.unit === 'bb' ? money(n) : `${money(n)} 分`;
 }
 
 // ---------- seat layout ----------
@@ -205,7 +224,7 @@ export const heroCat = computed(() => {
 });
 
 export function actionText(p: Player) {
-  return p.lastAmount ? `${p.lastLabel} ${money(p.lastAmount)}` : p.lastLabel;
+  return p.lastAmount ? `${p.lastLabel} ${moneyU(p.lastAmount)}` : p.lastLabel;
 }
 
 export function summaryText() {
@@ -265,8 +284,23 @@ watch(
   () => can.value.my,
   (my) => {
     if (!my) ui.raiseOpen = false;
+    else if (ui.preAct) {
+      const g = game.value;
+      const kind = ui.preAct;
+      ui.preAct = null;
+      if (preRound !== roundKey()) return; // picked in an earlier betting round
+      doAct(kind === 'checkfold' && g.toCall(g.human!) === 0 ? 'call' : 'fold');
+    }
   },
 );
+// a pre-action only covers the current betting round
+const roundKey = () => `${game.value.handNo}-${game.value.street}`;
+let preRound = '';
+export function setPreAct(kind: 'fold' | 'checkfold' | null) {
+  ui.preAct = kind;
+  preRound = roundKey();
+}
+watch(roundKey, () => (ui.preAct = null));
 
 export const statusText = computed(() => {
   const g = game.value;
@@ -286,6 +320,7 @@ export const statusText = computed(() => {
     if (my) return '轮到你了' + clockText();
     if (h.folded) return '你已弃牌，观看本手…';
     if (h.allIn) return '你已全下';
+    if (ui.preAct) return `已预选「${ui.preAct === 'fold' ? '弃牌' : '过牌/弃牌'}」，轮到你时自动执行`;
     if (g.turn >= 0) return `等待 ${g.players[g.turn].name} 行动…`;
     return '发牌中…';
   }
@@ -304,6 +339,7 @@ export function doAct(kind: 'fold' | 'call' | 'raise' | 'allin') {
       openRaise(true);
       return;
     }
+    setRaise(ui.raiseValue); // a typed amount may be out of range
     const v = ui.raiseValue;
     openRaise(false);
     const { maxTo } = raiseBounds();
@@ -323,6 +359,56 @@ export function toast(msg: string) {
   ui.toastId++; // re-creates the element so the animation replays
   clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => (ui.toast = ''), 3200);
+}
+
+// ---------- table emotes ----------
+let emoteId = 0;
+function showEmote(from: number, to: number, emoji: string) {
+  const id = ++emoteId;
+  ui.emotes.push({ id, from, to, emoji });
+  setTimeout(() => (ui.emotes = ui.emotes.filter((e) => e.id !== id)), 2200);
+}
+/** click on a seat's avatar: open/close the emote picker (needs a seat of your own) */
+export function toggleEmotePick(seat: number) {
+  if (meId() < 0) return toast('入座后才能互动');
+  ui.emotePick = ui.emotePick === seat ? -1 : seat;
+}
+export function sendEmote(to: number, emoji: string) {
+  ui.emotePick = -1;
+  if (ui.mode === 'online') net.send({ t: 'emote', to, emoji });
+  else showEmote(meId(), to, emoji);
+}
+
+/** online, after a hand: show some of your hole cards to the table */
+export function showCards(cards: number[]) {
+  sfx.click();
+  net.send({ t: 'show', cards });
+}
+
+// ---------- table chat ----------
+let chatId = 0;
+let freshTimer = 0;
+function onChat(user: string, seat: number, text: string) {
+  const id = ++chatId;
+  ui.chat.push({ id, user, seat, text });
+  if (ui.chat.length > 100) ui.chat.shift();
+  ui.chatFresh = true;
+  if (!ui.chatOpen) ui.chatUnread++;
+  clearTimeout(freshTimer);
+  freshTimer = window.setTimeout(() => (ui.chatFresh = false), 3000);
+  if (seat < 0) return;
+  ui.says[seat] = { id, text };
+  setTimeout(() => {
+    if (ui.says[seat]?.id === id) delete ui.says[seat];
+  }, 4000);
+}
+export function toggleChat() {
+  sfx.click();
+  ui.chatOpen = !ui.chatOpen;
+  ui.chatUnread = 0;
+}
+export function sendChat(text: string) {
+  if (text.trim()) net.send({ t: 'chat', text: text.trim() });
 }
 
 // ---------- prefs toggles ----------
@@ -365,6 +451,11 @@ function useLocal() {
   if (ui.mode === 'solo') return;
   ui.mode = 'solo';
   game.value = local;
+  ui.chat = [];
+  ui.chatFresh = false;
+  ui.chatOpen = false;
+  ui.chatUnread = 0;
+  ui.says = {};
   remote.state = null;
   remote.players = [];
   remote.mySeat = -1;
@@ -398,9 +489,11 @@ export function startRoom(cfg: RoomConfig) {
   saveJSON('holdem-room', room);
   useLocal();
   ui.screen = 'table';
+  ui.preAct = null;
   local.newGame(undefined, room);
 }
 export function restartSolo() {
+  ui.preAct = null;
   local.newGame(undefined, room);
 }
 export function soloRoom() {
@@ -585,6 +678,12 @@ net.onMessage = (m: ServerMsg) => {
       if (ui.mode === 'online') useLocal();
       ui.screen = ui.user ? 'rooms' : 'login';
       break;
+    case 'emote':
+      if (ui.mode === 'online') showEmote(m.from, m.to, m.emoji);
+      break;
+    case 'chat':
+      if (ui.mode === 'online') onChat(m.user, m.seat, m.text);
+      break;
     case 'notice':
     case 'error':
       toast(m.msg);
@@ -600,6 +699,7 @@ function onGameEvent(e: GameEvent) {
   else if (e.type === 'action') {
     if (e.action === 'fold') sfx.fold();
     else if (e.action === 'check') sfx.check();
+    else if (e.action === 'allin') sfx.allin();
     else sfx.chip();
   } else if (e.type === 'turn' && me >= 0 && e.player === me) sfx.turn();
   else if (e.type === 'win') {

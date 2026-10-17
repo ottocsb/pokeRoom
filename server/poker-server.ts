@@ -9,7 +9,9 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { emptySeat, Game, newPlayer, PROFILES, type ActionType, type GameEvent, type Player } from '../src/game';
 import {
+  CHAT_MAX,
   CODE_CHARS,
+  EMOTES,
   normCode,
   sanitizeCreate,
   TURN_MS,
@@ -38,6 +40,8 @@ interface RoomCfg {
 // No public rooms: every table is created by a player and reached by its invite code.
 const OFFLINE_KICK_MS = 60_000;
 const NEXT_HAND_MS = 5000;
+/** the break between hands gets this much longer when someone shows cards */
+const SHOW_EXTRA_MS = 3000;
 /** private rooms with nobody inside are dissolved after this long */
 const EMPTY_ROOM_MS = 30 * 60_000;
 const MAX_PRIVATE_ROOMS = 500;
@@ -199,6 +203,9 @@ class Table {
   private turnDeadline = 0;
   private turnTotal = 0;
   private nextTimer: ReturnType<typeof setTimeout> | null = null;
+  private nextAt = 0;
+  /** the break after this hand was already extended by a show */
+  private showExtended = false;
   private pending = false;
   /** when the room last became empty (0 = someone is here) */
   emptySince = 0;
@@ -215,6 +222,9 @@ class Table {
   private started = Date.now();
   /** standings already saved to the db */
   private recorded = false;
+  /** last emote time per user (simple flood guard) */
+  private lastEmote = new Map<string, number>();
+  private lastChat = new Map<string, number>();
 
   constructor(
     public cfg: RoomCfg,
@@ -452,7 +462,7 @@ class Table {
     for (const p of g.players) {
       if (p.empty) continue;
       Object.assign(p, { hole: [], bet: 0, total: 0, folded: false, allIn: false, out: false, waiting: false, acted: false });
-      Object.assign(p, { locked: false, lastLabel: '', lastAmount: 0, result: null, won: 0, revealed: false });
+      Object.assign(p, { locked: false, lastLabel: '', lastAmount: 0, result: null, won: 0, revealed: false, shown: [] });
     }
     this.changed();
   }
@@ -469,9 +479,15 @@ class Table {
     } else if (e.type === 'win') {
       this.logHand();
       this.clearTurn();
-      if (this.nextTimer) clearTimeout(this.nextTimer);
-      this.nextTimer = setTimeout(() => (this.closing ? this.settle() : this.nextHand()), NEXT_HAND_MS);
+      this.showExtended = false;
+      this.armNext(NEXT_HAND_MS);
     }
+  }
+  /** after a hand: deal the next one (or settle a closing table) in `ms` */
+  private armNext(ms: number) {
+    if (this.nextTimer) clearTimeout(this.nextTimer);
+    this.nextAt = Date.now() + ms;
+    this.nextTimer = setTimeout(() => (this.closing ? this.settle() : this.nextHand()), ms);
   }
   private clearTurn() {
     if (this.turnTimer) clearTimeout(this.turnTimer);
@@ -625,7 +641,7 @@ class Table {
             bot: !p.user,
             styleLabel: p.style.label,
             chips: p.chips,
-            hole: p.user === user || p.revealed ? p.hole : p.hole.map(() => null),
+            hole: p.user === user || p.revealed ? p.hole : p.hole.map((c, k) => (p.shown?.includes(k) ? c : null)),
             bet: p.bet,
             total: p.total,
             folded: p.folded,
@@ -638,6 +654,7 @@ class Table {
             result: p.result,
             won: p.won,
             revealed: p.revealed,
+            shown: p.shown ?? [],
             waiting: !!p.waiting,
             leaving: !!p.leaving,
             offline: !!p.offline,
@@ -672,6 +689,41 @@ class Table {
       requests: user === this.cfg.owner ? this.requests : this.requests.filter((r) => r.user === user),
       closing: this.closing,
     };
+  }
+  /** after a hand, a player whose cards were not shown down may show one or both */
+  show(user: string, cards: unknown[]) {
+    const g = this.game;
+    const p = g.players[this.seatOf(user)];
+    if (!p || g.phase !== 'handover' || !p.hole.length || p.revealed) return;
+    const add = [0, 1].filter((k) => cards.includes(k) && !p.shown?.includes(k));
+    if (!add.length) return;
+    p.shown = [...(p.shown ?? []), ...add].sort();
+    if (!this.showExtended && this.nextTimer) {
+      this.showExtended = true;
+      this.armNext(Math.max(0, this.nextAt - Date.now()) + SHOW_EXTRA_MS);
+    }
+    this.changed();
+  }
+  /** table chat: everyone in the room, spectators included */
+  chat(user: string, text: string): string | null {
+    const msg = text.trim().slice(0, CHAT_MAX);
+    if (!msg) return null;
+    const now = Date.now();
+    if (now - (this.lastChat.get(user) ?? 0) < 800) return '发言太快了，请稍后再发';
+    this.lastChat.set(user, now);
+    for (const u of this.members) this.hub.send(this.hub.clientOf(u), { t: 'chat', user, seat: this.seatOf(user), text: msg });
+    return null;
+  }
+  /** a seated player sends an emote to a seat (their own one included) */
+  emote(user: string, to: number, emoji: string): string | null {
+    const from = this.seatOf(user);
+    if (from < 0) return '入座后才能互动';
+    if (!EMOTES.includes(emoji) || !this.game.players[to] || this.game.players[to].empty) return null;
+    const now = Date.now();
+    if (now - (this.lastEmote.get(user) ?? 0) < 1000) return null;
+    this.lastEmote.set(user, now);
+    for (const u of this.members) this.hub.send(this.hub.clientOf(u), { t: 'emote', from, to, emoji });
+    return null;
   }
   /** owner closes the table: right away, or once the hand in play is over */
   closeTable(by: string): string | null {
@@ -874,6 +926,9 @@ export function createPokerServer(opts: { dataDir: string }) {
     else if (m.t === 'history') hub.send(c, { t: 'history', ...t.history(user) });
     else if (m.t === 'approve') err = t.approve(user, String(m.user ?? ''), !!m.ok);
     else if (m.t === 'closeTable') err = t.closeTable(user);
+    else if (m.t === 'chat') err = t.chat(user, String(m.text ?? ''));
+    else if (m.t === 'show') t.show(user, Array.isArray(m.cards) ? m.cards : []);
+    else if (m.t === 'emote') err = t.emote(user, Number(m.to) | 0, String(m.emoji ?? ''));
     else if (m.t === 'act' && ACTIONS.has(m.type)) t.act(user, m.type, Number.isFinite(m.to) ? Math.floor(m.to!) : undefined);
     if (err) hub.send(c, { t: 'error', msg: err });
   }
