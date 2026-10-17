@@ -33,6 +33,7 @@ export const local = new Game();
 export const net = new Net();
 export const remote = new RemoteTable(net);
 export const voice = new Voice((m) => net.send(m));
+voice.onState = (user, ok) => toast(ok ? `已和 ${user} 接通语音` : `和 ${user} 的语音连接失败：网络无法直连`);
 /** What the view draws: `local` in practice mode, `remote` inside an online room.
  *  The engines are plain objects; call refresh() after they change so Vue re-renders. */
 export const game = shallowRef<TableLike>(local);
