@@ -411,10 +411,13 @@ export class Game {
     const over = this.players.filter((q) => this.inHand(q)).length <= 1 || this.roundComplete();
     this.turn = over ? -1 : this.nextIndex(this.turn, (q) => this.canAct(q));
     this.onUpdate();
+    // drop a proceed() still queued from an earlier action, or the street could end twice
+    this.clearTimers();
     this.schedule(() => this.proceed(), 250);
   }
 
   private endStreet() {
+    if (this.phase !== 'betting') return;
     for (const p of this.players) {
       p.bet = 0;
       p.acted = false;
@@ -504,7 +507,7 @@ export class Game {
       }
       const share = Math.floor(pot.amount / best.length);
       let rem = pot.amount - share * best.length;
-      const ordered = [...best].sort((a, b) => ((a.id - this.dealer + n) % n) - ((b.id - this.dealer + n) % n));
+      const ordered = [...best].sort((a, b) => ((a.id - this.dealer - 1 + n) % n) - ((b.id - this.dealer - 1 + n) % n));
       for (const w of ordered) {
         const amt = share + (rem > 0 ? 1 : 0);
         if (rem > 0) rem--;

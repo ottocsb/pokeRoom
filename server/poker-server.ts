@@ -234,6 +234,8 @@ class Table {
     this.logKey = `${cfg.id}-${Date.now()}`;
     const g = this.game;
     g.solo = false;
+    // the seeded RNG is guessable from the table creation time: shuffle with crypto randomness instead
+    g.rng.next = () => randomBytes(4).readUInt32BE() / 4294967296;
     g.aiDelay = 900;
     g.room = { max: cfg.max, players: cfg.max, sb: cfg.sb, bb: cfg.bb, startChips: cfg.buyIn };
     g.players = Array.from({ length: cfg.max }, (_, i) => emptySeat(i));
