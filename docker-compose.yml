@@ -22,7 +22,7 @@ services:
     restart: unless-stopped
     network_mode: host
     command: >
-      -n --log-file=stdout --no-cli --no-tls --no-dtls --fingerprint
+      -n --log-file=stdout --no-cli --no-tls --fingerprint
       --listening-port=3478 --min-port=49160 --max-port=49200
       --external-ip=${TURN_IP}
       --realm=pokeroom --use-auth-secret --static-auth-secret=${TURN_SECRET}
